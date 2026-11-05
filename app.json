@@ -1,1 +1,65 @@
-{"expo":{"name":"EKO Store","slug":"eko-store","scheme":"ekostore","version":"0.1.0","orientation":"portrait","userInterfaceStyle":"light","android":{"package":"com.ekoshpk.store"},"plugins":["expo-router"]}}
+{
+  "expo": {
+    "name": "EKO Store",
+    "slug": "eko-store",
+    "scheme": "ekostore",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.ekoshpk.store",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "permissions": ["android.permission.POST_NOTIFICATIONS"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "EKO Store",
+      "shortName": "EKO",
+      "themeColor": "#0166B4",
+      "backgroundColor": "#FFFFFF"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-localization",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "EKO Store përdor fotot për të shtuar produkte. / EKO Store uses photos to add products.",
+          "cameraPermission": "EKO Store përdor kamerën për të fotografuar produkte. / EKO Store uses the camera to photograph products.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/adaptive-icon.png",
+          "color": "#0166B4"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "eas": {}
+    }
+  }
+}

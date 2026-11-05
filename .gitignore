@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+dist/
+web-build/
+.env
+.env.local
+*.log
+android/
+ios/
+supabase/.branches
+supabase/.temp
+test-results/
+playwright-report/
+supabase/functions/.local-ca.crt
