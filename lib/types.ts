@@ -1,9 +1,19 @@
 export type Role = 'retail' | 'wholesale' | 'admin';
 export type WholesaleStatus = 'none' | 'pending' | 'approved' | 'rejected';
-export type OrderStatus = 'new' | 'confirmed' | 'preparing' | 'shipped' | 'delivered' | 'cancelled';
+export type OrderStatus = 'new' | 'confirmed' | 'preparing' | 'shipped' | 'delivered' | 'cancelled'
+  /** v0.2 statuses, only on old orders */
+  | 'accepted' | 'completed';
 export type PaymentMethod = 'cash_on_delivery' | 'bank_transfer';
 
 export const ORDER_STATUSES: OrderStatus[] = ['new', 'confirmed', 'preparing', 'shipped', 'delivered', 'cancelled'];
+
+/** Wholesale prices apply only to accounts an administrator has approved. */
+export const isWholesale = (p: { role: Role; wholesale_status: WholesaleStatus } | null | undefined) =>
+  !!p && p.role !== 'admin' && p.wholesale_status === 'approved';
+
+/** What kind of account this is, for display. */
+export const accountKind = (p: { role: Role; wholesale_status: WholesaleStatus }): Role =>
+  p.role === 'admin' ? 'admin' : isWholesale(p) ? 'wholesale' : 'retail';
 
 export type Profile = {
   id: string;

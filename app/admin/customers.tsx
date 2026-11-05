@@ -9,7 +9,7 @@ import { errorText, TKey, useI18n } from '../../lib/i18n';
 import { useNotifications } from '../../lib/notifications';
 import { dispatchNotifications, supabase } from '../../lib/supabase';
 import { colors } from '../../lib/theme';
-import type { Profile } from '../../lib/types';
+import { accountKind, isWholesale, type Profile } from '../../lib/types';
 
 type Filter = 'pending' | 'wholesale' | 'retail' | 'all';
 
@@ -40,14 +40,14 @@ function Customers() {
       (p) =>
         (filter === 'all' ||
           (filter === 'pending' && p.wholesale_status === 'pending') ||
-          (filter === 'wholesale' && p.role === 'wholesale') ||
-          (filter === 'retail' && p.role === 'retail')) &&
+          (filter === 'wholesale' && isWholesale(p)) ||
+          (filter === 'retail' && !isWholesale(p))) &&
         (!s || `${p.full_name} ${p.business_name} ${p.email} ${p.phone}`.toLowerCase().includes(s)),
     );
   }, [rows, filter, q]);
 
   async function review(p: Profile, approve: boolean) {
-    if (!approve && p.role === 'wholesale') {
+    if (!approve && isWholesale(p)) {
       if (!(await confirmAction(t('revokeWholesale'), p.business_name || p.full_name, t('yes'), t('no')))) return;
     }
     setBusyId(p.id);
@@ -77,7 +77,7 @@ function Customers() {
           <Row style={{ justifyContent: 'space-between' }}>
             <Text style={{ fontWeight: '700', color: colors.text, fontSize: 16 }}>{p.business_name || p.full_name || p.email}</Text>
             <Row style={{ gap: 6 }}>
-              <Badge label={t(`role_${p.role}` as TKey)} tone={p.role === 'wholesale' ? 'success' : 'muted'} />
+              <Badge label={t(`role_${accountKind(p)}` as TKey)} tone={isWholesale(p) ? 'success' : 'muted'} />
               {p.wholesale_status === 'pending' && <Badge label={t('filterPending')} tone="warning" />}
               {p.wholesale_status === 'rejected' && <Badge label={t('reject')} tone="danger" />}
             </Row>
@@ -102,10 +102,10 @@ function Customers() {
                 <Button small variant="danger" icon="close" title={t('reject')} onPress={() => review(p, false)} disabled={busyId === p.id} />
               </>
             )}
-            {p.role === 'retail' && p.wholesale_status !== 'pending' && (
+            {!isWholesale(p) && p.wholesale_status !== 'pending' && (
               <Button small variant="secondary" icon="briefcase-outline" title={`${t('approve')}: ${t('tier_wholesale')}`} onPress={() => review(p, true)} disabled={busyId === p.id} />
             )}
-            {p.role === 'wholesale' && (
+            {isWholesale(p) && (
               <Button small variant="secondary" icon="remove-circle-outline" title={t('revokeWholesale')} onPress={() => review(p, false)} disabled={busyId === p.id} />
             )}
             {!!p.phone && <Button small variant="ghost" icon="call-outline" title={t('call')} onPress={() => Linking.openURL(`tel:${p.phone}`)} />}

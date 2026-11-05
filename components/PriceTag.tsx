@@ -5,7 +5,7 @@ import { useAuth } from '../lib/auth';
 import { money } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { colors } from '../lib/theme';
-import type { Product } from '../lib/types';
+import { isWholesale, type Product } from '../lib/types';
 
 export function PriceTag({ product, size = 18 }: { product: Product; size?: number }) {
   const { t } = useI18n();
@@ -22,7 +22,7 @@ export function PriceTag({ product, size = 18 }: { product: Product; size?: numb
       {money(product.price)}
       <Text style={{ color: colors.muted, fontWeight: '500', fontSize: 12 }}>
         {' '}/ {product.unit}
-        {profile?.role === 'wholesale' ? ` · ${t('tier_wholesale')}` : ''}
+        {isWholesale(profile) ? ` · ${t('tier_wholesale')}` : ''}
       </Text>
     </Text>
   );

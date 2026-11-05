@@ -9,7 +9,7 @@ import { useCart } from '../../lib/cart';
 import { useCatalog } from '../../lib/catalog';
 import { useI18n } from '../../lib/i18n';
 import { colors, maxWidth } from '../../lib/theme';
-import type { Product } from '../../lib/types';
+import { isWholesale, type Product } from '../../lib/types';
 
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
@@ -40,7 +40,7 @@ export default function CatalogScreen() {
   const header = (
     <View style={{ gap: 12, marginBottom: 12 }}>
       {!session && <Banner text={t('guestAccount')} />}
-      {profile?.role === 'wholesale' && <Banner tone="success" text={t('pricesWholesale')} />}
+      {isWholesale(profile) && <Banner tone="success" text={t('pricesWholesale')} />}
       {profile?.wholesale_status === 'pending' && <Banner tone="warning" text={t('pricesPendingWholesale')} />}
       {error && (
         <View style={{ gap: 8 }}>

@@ -9,6 +9,7 @@ import { errorText, TKey, useI18n } from '../../lib/i18n';
 import { useNotifications } from '../../lib/notifications';
 import { dispatchNotifications, supabase } from '../../lib/supabase';
 import { colors } from '../../lib/theme';
+import { accountKind } from '../../lib/types';
 
 export default function AccountScreen() {
   const { t, lang, setLang } = useI18n();
@@ -86,14 +87,14 @@ export default function AccountScreen() {
     router.replace('/');
   }
 
-  const canRequest = profile && profile.role === 'retail' && profile.wholesale_status !== 'pending';
+  const canRequest = profile && accountKind(profile) === 'retail' && profile.wholesale_status !== 'pending';
 
   return (
     <Screen style={{ maxWidth: 640 }}>
       <Card>
         <Row style={{ justifyContent: 'space-between' }}>
           <H2>{profile?.business_name || profile?.full_name || session.user.email}</H2>
-          {profile && <Badge label={t(`role_${profile.role}` as TKey)} tone={profile.role === 'retail' ? 'muted' : 'success'} />}
+          {profile && <Badge label={t(`role_${accountKind(profile)}` as TKey)} tone={accountKind(profile) === 'retail' ? 'muted' : 'success'} />}
         </Row>
         <Muted>{session.user.email}</Muted>
         {profile?.wholesale_status === 'pending' && <Banner tone="warning" text={t('ws_pending')} />}
@@ -116,7 +117,7 @@ export default function AccountScreen() {
         <Field label={t('phone')} value={form.phone} onChangeText={set('phone')} keyboardType="phone-pad" />
         <Field label={t('address')} value={form.address} onChangeText={set('address')} autoCapitalize="sentences" />
         <Field label={t('city')} value={form.city} onChangeText={set('city')} autoCapitalize="words" />
-        {(profile?.role !== 'retail' || showWholesale || profile?.wholesale_status !== 'none') && (
+        {(profile?.role === 'admin' || showWholesale || profile?.wholesale_status !== 'none') && (
           <>
             <Field label={t('businessName')} value={form.business_name} onChangeText={set('business_name')} autoCapitalize="words" testID="a-business" />
             <Field label={t('businessNumber')} value={form.business_number} onChangeText={set('business_number')} />

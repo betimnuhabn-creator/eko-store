@@ -1,24 +1,33 @@
 -- =====================================================================
--- EKO Store v1.0 database
+-- EKO Store v1.0 database migration
+-- File: supabase/migrations/20261105000000_eko_store_v1.sql
 --
--- Safe to run on:
---   * an EMPTY Supabase project, or
---   * a project where the v0.2 `schema.sql` was (partly) run.
--- It upgrades the v0.2 tables in place and keeps existing data.
+-- * Run it as ONE script in the Supabase SQL Editor (or `supabase db push`).
+-- * Works on an EMPTY project and on a project where the old v0.2
+--   schema.sql was (partly) run. Safe to run more than once.
+-- * The whole script is one transaction: if anything fails, nothing changes.
+-- * Existing customer/order data is never changed or deleted: the script only
+--   adds tables, columns, indexes, functions and policies, and fills NEW
+--   columns. Old v0.2 columns are kept (no longer used by the app).
+-- * Privileges are changed only on EKO Store's own tables and functions.
 --
 -- Security model
---   * All writes from the app go through SECURITY DEFINER functions (RPCs)
---     that check the caller. Clients have no direct INSERT/UPDATE/DELETE
---     on business tables.
---   * The products table is not readable directly. Prices are only
---     exposed by list_products(): guests get no price, retail customers get
---     the retail price, approved wholesale customers get the wholesale price.
+--   * Every write from the app goes through a SECURITY DEFINER function
+--     that checks the caller. Clients have no INSERT/UPDATE/DELETE on any
+--     EKO table.
+--   * The products table cannot be read through the API at all. Prices come
+--     only from list_products(): guests get no price, retail customers the
+--     retail price, approved wholesale customers the wholesale price.
 -- =====================================================================
+
+begin;
+
+set local lock_timeout = '10s';
 
 create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------------
--- Generic helpers
+-- Helpers
 -- ---------------------------------------------------------------------
 create or replace function public.touch_updated_at() returns trigger
 language plpgsql set search_path = '' as $$
@@ -48,27 +57,28 @@ alter table public.profiles
   add column if not exists language text not null default 'sq',
   add column if not exists updated_at timestamptz not null default now();
 
--- v0.2 used role='wholesale' + wholesale_approved. v1 uses
---   role = 'wholesale' only when approved, and wholesale_status for the request.
+-- v0.2 stored the wholesale state as role='wholesale' + wholesale_approved.
+-- Fill the NEW wholesale_status column from it (old columns stay untouched).
 do $$
 begin
   if exists (select 1 from information_schema.columns
              where table_schema = 'public' and table_name = 'profiles'
                and column_name = 'wholesale_approved') then
-    update public.profiles set wholesale_status = 'approved'
-      where role = 'wholesale' and wholesale_approved;
-    update public.profiles set wholesale_status = 'pending', role = 'retail'
-      where role = 'wholesale' and not wholesale_approved;
-    alter table public.profiles drop column wholesale_approved;
+    execute $q$
+      update public.profiles
+         set wholesale_status = case when wholesale_approved then 'approved' else 'pending' end
+       where wholesale_status = 'none' and role = 'wholesale'
+    $q$;
   end if;
 end $$;
 
+-- Fill the NEW email column.
 update public.profiles p set email = coalesce(u.email, '')
   from auth.users u where u.id = p.id and p.email = '';
 
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check
-  check (role in ('retail', 'wholesale', 'admin'));
+  check (role in ('retail', 'wholesale', 'admin')) not valid;
 alter table public.profiles drop constraint if exists profiles_wholesale_status_check;
 alter table public.profiles add constraint profiles_wholesale_status_check
   check (wholesale_status in ('none', 'pending', 'approved', 'rejected'));
@@ -86,13 +96,19 @@ language sql stable security definer set search_path = '' as $$
 $$;
 
 -- 'guest' | 'retail' | 'wholesale' | 'admin'
+-- Wholesale prices ONLY when an administrator has approved the account.
 create or replace function public.price_tier() returns text
 language sql stable security definer set search_path = '' as $$
-  select coalesce((select role from public.profiles where id = auth.uid()), 'guest')
+  select coalesce(
+    (select case when role = 'admin' then 'admin'
+                 when wholesale_status = 'approved' then 'wholesale'
+                 else 'retail' end
+       from public.profiles where id = auth.uid()),
+    'guest')
 $$;
 
 -- ---------------------------------------------------------------------
--- NOTIFICATIONS (in-app + push/email dispatch queue)
+-- NOTIFICATIONS (in-app list + push/e-mail delivery queue)
 -- ---------------------------------------------------------------------
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
@@ -103,6 +119,14 @@ create table if not exists public.notifications (
   dispatched_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+-- Delivery bookkeeping: a notification is "claimed" while being sent and is
+-- only marked dispatched after delivery succeeded (or after 5 failed tries).
+alter table public.notifications
+  add column if not exists claimed_at timestamptz,
+  add column if not exists attempts integer not null default 0,
+  add column if not exists last_error text;
+
 create index if not exists notifications_recipient_idx
   on public.notifications (recipient_id, created_at desc);
 create index if not exists notifications_undispatched_idx
@@ -129,7 +153,7 @@ returns void language sql security definer set search_path = '' as $$
 $$;
 
 -- ---------------------------------------------------------------------
--- New user -> profile (+ admin notifications)
+-- New user -> profile (+ admin notification)
 -- ---------------------------------------------------------------------
 create or replace function public.new_profile() returns trigger
 language plpgsql security definer set search_path = '' as $$
@@ -138,6 +162,8 @@ declare
   v_wants_wholesale boolean := coalesce(v_meta->>'requested_wholesale', 'false') = 'true';
   v_lang text := case when v_meta->>'language' = 'en' then 'en' else 'sq' end;
 begin
+  -- Role is always 'retail' at sign-up; nothing in the sign-up data can grant
+  -- wholesale prices or admin rights.
   insert into public.profiles (id, email, full_name, phone, role, wholesale_status,
                                business_name, business_number, language)
   values (new.id, coalesce(new.email, ''),
@@ -206,21 +232,18 @@ alter table public.products
   add column if not exists images text[] not null default '{}',
   add column if not exists updated_at timestamptz not null default now();
 
--- v0.2 had a single image_url
+-- v0.2 had a single image_url column: copy it into the NEW images column.
 do $$
 begin
   if exists (select 1 from information_schema.columns
              where table_schema = 'public' and table_name = 'products'
                and column_name = 'image_url') then
-    update public.products set images = array[image_url]
-      where image_url is not null and image_url <> '' and cardinality(images) = 0;
-    alter table public.products drop column image_url;
+    execute $q$
+      update public.products set images = array[image_url]
+       where image_url is not null and image_url <> '' and cardinality(images) = 0
+    $q$;
   end if;
 end $$;
-
-update public.products set description = '' where description is null;
-alter table public.products alter column description set default '';
-alter table public.products alter column description set not null;
 
 create index if not exists products_category_idx on public.products (category_id);
 
@@ -240,7 +263,6 @@ create table if not exists public.orders (
 );
 
 alter table public.orders
-  add column if not exists order_number bigint generated by default as identity (start with 1001),
   add column if not exists price_tier text not null default 'retail',
   add column if not exists item_count integer not null default 0,
   add column if not exists payment_method text not null default 'cash_on_delivery',
@@ -252,17 +274,59 @@ alter table public.orders
   add column if not exists admin_note text not null default '',
   add column if not exists updated_at timestamptz not null default now();
 
--- Customers may delete their account; their orders are kept for EKO's records.
+-- Human-readable order numbers (#1001, #1002, ...).
+-- Existing orders (if any) are numbered by creation date; new orders continue
+-- after the highest number. Re-running never renumbers anything.
+do $$
+declare
+  v_max bigint;
+  v_seq text;
+  v_last bigint;
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'orders' and column_name = 'order_number') then
+    alter table public.orders add column order_number bigint;
+  end if;
+
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'orders'
+               and column_name = 'order_number' and is_identity = 'NO') then
+    select coalesce(max(order_number), 1000) into v_max from public.orders;
+    with n as (
+      select id, v_max + row_number() over (order by created_at, id) as rn
+      from public.orders where order_number is null
+    )
+    update public.orders o set order_number = n.rn from n where n.id = o.id;
+    select coalesce(max(order_number), 1000) into v_max from public.orders;
+    alter table public.orders alter column order_number set not null;
+    execute format(
+      'alter table public.orders alter column order_number add generated by default as identity (start with %s)',
+      greatest(v_max + 1, 1001));
+  end if;
+
+  -- Keep the counter ahead of the highest existing number (never moves back).
+  v_seq := pg_get_serial_sequence('public.orders', 'order_number');
+  select max(order_number) into v_max from public.orders;
+  execute format('select last_value from %s', v_seq) into v_last;
+  if v_max is not null and v_max >= v_last then
+    perform setval(v_seq, v_max);
+  end if;
+end $$;
+
+create unique index if not exists orders_order_number_key on public.orders (order_number);
+
+-- Orders reference the customer's profile. Deleting an account keeps the
+-- order (customer_id becomes null). NOT VALID: existing rows are not re-checked.
 alter table public.orders drop constraint if exists orders_customer_id_fkey;
 alter table public.orders alter column customer_id drop not null;
 alter table public.orders add constraint orders_customer_id_fkey
-  foreign key (customer_id) references public.profiles(id) on delete set null;
+  foreign key (customer_id) references public.profiles(id) on delete set null not valid;
 
+-- 'accepted' and 'completed' are v0.2 statuses, kept valid so old orders stay untouched.
 alter table public.orders drop constraint if exists orders_status_check;
-update public.orders set status = 'confirmed' where status = 'accepted';
-update public.orders set status = 'delivered' where status = 'completed';
 alter table public.orders add constraint orders_status_check
-  check (status in ('new', 'confirmed', 'preparing', 'shipped', 'delivered', 'cancelled'));
+  check (status in ('new', 'confirmed', 'preparing', 'shipped', 'delivered', 'cancelled',
+                    'accepted', 'completed'));
 alter table public.orders drop constraint if exists orders_payment_method_check;
 alter table public.orders add constraint orders_payment_method_check
   check (payment_method in ('cash_on_delivery', 'bank_transfer'));
@@ -270,7 +334,6 @@ alter table public.orders drop constraint if exists orders_price_tier_check;
 alter table public.orders add constraint orders_price_tier_check
   check (price_tier in ('retail', 'wholesale'));
 
-create unique index if not exists orders_order_number_key on public.orders (order_number);
 create index if not exists orders_customer_idx on public.orders (customer_id, created_at desc);
 create index if not exists orders_status_idx on public.orders (status, created_at desc);
 
@@ -281,7 +344,7 @@ create trigger orders_touch before update on public.orders
 create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
-  product_id uuid not null references public.products(id),
+  product_id uuid references public.products(id) on delete set null,
   quantity integer not null check (quantity > 0),
   unit_price numeric(12,2) not null
 );
@@ -291,19 +354,21 @@ alter table public.order_items
   add column if not exists sku text not null default '',
   add column if not exists unit text not null default '';
 
--- Keep order history even if a product is deleted later.
+-- Order lines keep their own copy of name/SKU, so deleting a product later
+-- never breaks order history.
 alter table public.order_items drop constraint if exists order_items_product_id_fkey;
 alter table public.order_items alter column product_id drop not null;
 alter table public.order_items add constraint order_items_product_id_fkey
-  foreign key (product_id) references public.products(id) on delete set null;
+  foreign key (product_id) references public.products(id) on delete set null not valid;
 
+-- Fill the NEW snapshot columns for existing order lines.
 update public.order_items i set product_name = p.name, sku = p.sku, unit = p.unit
   from public.products p where p.id = i.product_id and i.product_name = '';
 
 create index if not exists order_items_order_idx on public.order_items (order_id);
 
 -- =====================================================================
--- ROW LEVEL SECURITY + GRANTS
+-- ROW LEVEL SECURITY + TABLE PRIVILEGES (EKO tables only)
 -- =====================================================================
 alter table public.profiles enable row level security;
 alter table public.categories enable row level security;
@@ -313,7 +378,7 @@ alter table public.order_items enable row level security;
 alter table public.notifications enable row level security;
 alter table public.push_tokens enable row level security;
 
--- Drop v0.2 / earlier policies so this file can be re-run.
+-- Remove old policies on EKO tables (v0.2 or earlier runs), then recreate.
 do $$
 declare r record;
 begin
@@ -324,20 +389,21 @@ begin
   end loop;
 end $$;
 
--- Start from zero privileges for API roles, then grant only reads.
+-- API roles: read-only, and only where a policy allows it.
 revoke all on public.profiles, public.categories, public.products, public.orders,
-  public.order_items, public.notifications, public.push_tokens from anon, authenticated;
+  public.order_items, public.notifications, public.push_tokens from public, anon, authenticated;
 
-grant select on public.profiles, public.orders, public.order_items, public.notifications
-  to authenticated;
 grant select on public.categories to anon, authenticated;
--- products: no direct access at all (use list_products()).
--- push_tokens: no direct access (use register_push_token()).
+grant select on public.profiles, public.orders, public.order_items, public.notifications to authenticated;
+-- products:    NO access (prices only via list_products()).
+-- push_tokens: NO access (register_push_token()).
 
+create policy categories_select_public on public.categories for select to anon
+  using (active);
+create policy categories_select_auth on public.categories for select to authenticated
+  using (active or (select public.is_admin()));
 create policy profiles_select on public.profiles for select to authenticated
   using (id = (select auth.uid()) or (select public.is_admin()));
-create policy categories_select on public.categories for select to anon, authenticated
-  using (active or (select public.is_admin()));
 create policy orders_select on public.orders for select to authenticated
   using (customer_id = (select auth.uid()) or (select public.is_admin()));
 create policy order_items_select on public.order_items for select to authenticated
@@ -346,7 +412,7 @@ create policy order_items_select on public.order_items for select to authenticat
 create policy notifications_select on public.notifications for select to authenticated
   using (recipient_id = (select auth.uid()));
 
--- Live notifications in the app
+-- Live notifications in the app.
 do $$
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
@@ -359,11 +425,13 @@ end $$;
 -- =====================================================================
 -- CATALOG
 -- =====================================================================
+-- Replace v0.2 functions (their signatures changed).
 drop function if exists public.list_products();
 drop function if exists public.guest_catalog();
+drop function if exists public.place_order(jsonb);
 
 -- price: the price THIS caller pays (null for guests).
--- retail_price / wholesale_price / stock: admins only.
+-- retail_price / wholesale_price / stock: administrators only.
 create or replace function public.list_products()
 returns table (
   id uuid, sku text, name text, name_en text, description text, description_en text,
@@ -372,7 +440,7 @@ returns table (
   created_at timestamptz, updated_at timestamptz)
 language sql stable security definer set search_path = '' as $$
   with t as (select public.price_tier() as tier)
-  select p.id, p.sku, p.name, p.name_en, p.description, p.description_en,
+  select p.id, p.sku, p.name, p.name_en, coalesce(p.description, ''), p.description_en,
          p.category_id, p.unit, p.images, p.stock > 0,
          case t.tier when 'guest' then null
                      when 'wholesale' then p.wholesale_price
@@ -387,8 +455,9 @@ language sql stable security definer set search_path = '' as $$
 $$;
 
 -- =====================================================================
--- CUSTOMER RPCs
+-- CUSTOMER FUNCTIONS
 -- =====================================================================
+-- Only these fields can be changed by the customer (never role/status).
 create or replace function public.update_my_profile(p jsonb)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
@@ -410,7 +479,7 @@ declare v public.profiles%rowtype;
 begin
   select * into v from public.profiles where id = auth.uid() for update;
   if not found then raise exception 'LOGIN_REQUIRED'; end if;
-  if v.role <> 'retail' then raise exception 'ALREADY_WHOLESALE'; end if;
+  if v.role = 'admin' or v.wholesale_status = 'approved' then raise exception 'ALREADY_WHOLESALE'; end if;
   if v.wholesale_status = 'pending' then return; end if;
   if coalesce(trim(p_business_name), '') = '' then raise exception 'BUSINESS_NAME_REQUIRED'; end if;
   update public.profiles set wholesale_status = 'pending',
@@ -421,14 +490,14 @@ begin
     jsonb_build_object('user_id', v.id, 'name', trim(p_business_name), 'email', v.email, 'phone', v.phone));
 end $$;
 
--- p_lines:    [{"product_id": "...", "quantity": 2}, ...]
+-- p_lines:    [{"product_id": "...", "quantity": 2}, ...]   (prices from the app are ignored)
 -- p_delivery: {"name","phone","address","city","note","payment_method"}
 create or replace function public.place_order(p_lines jsonb, p_delivery jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   v_user uuid := auth.uid();
-  v_profile public.profiles%rowtype;
   v_tier text;
+  v_business text;
   v_order uuid;
   v_number bigint;
   v_total numeric := 0;
@@ -439,8 +508,11 @@ declare
   v_payment text := coalesce(p_delivery->>'payment_method', 'cash_on_delivery');
 begin
   if v_user is null then raise exception 'LOGIN_REQUIRED'; end if;
-  select * into v_profile from public.profiles where id = v_user;
-  if not found then raise exception 'LOGIN_REQUIRED'; end if;
+  v_tier := public.price_tier();
+  if v_tier = 'guest' then raise exception 'LOGIN_REQUIRED'; end if;
+  v_tier := case when v_tier = 'wholesale' then 'wholesale' else 'retail' end;
+  select business_name into v_business from public.profiles where id = v_user;
+
   if jsonb_typeof(p_lines) is distinct from 'array'
      or jsonb_array_length(p_lines) = 0 or jsonb_array_length(p_lines) > 200 then
     raise exception 'INVALID_CART';
@@ -450,8 +522,6 @@ begin
     raise exception 'DELIVERY_REQUIRED';
   end if;
   if v_payment not in ('cash_on_delivery', 'bank_transfer') then raise exception 'INVALID_PAYMENT'; end if;
-
-  v_tier := case when v_profile.role = 'wholesale' then 'wholesale' else 'retail' end;
 
   insert into public.orders (customer_id, total, price_tier, payment_method,
     delivery_name, delivery_phone, delivery_address, delivery_city, customer_note)
@@ -484,7 +554,7 @@ begin
 
   perform public.notify_admins('new_order', jsonb_build_object(
     'order_id', v_order, 'order_number', v_number, 'total', v_total,
-    'name', coalesce(nullif(v_profile.business_name, ''), trim(p_delivery->>'name')),
+    'name', coalesce(nullif(v_business, ''), trim(p_delivery->>'name')),
     'tier', v_tier));
 
   return jsonb_build_object('id', v_order, 'order_number', v_number, 'total', v_total);
@@ -494,6 +564,7 @@ create or replace function public.cancel_my_order(p_order uuid)
 returns void language plpgsql security definer set search_path = '' as $$
 declare v public.orders%rowtype;
 begin
+  if auth.uid() is null then raise exception 'LOGIN_REQUIRED'; end if;
   select * into v from public.orders where id = p_order and customer_id = auth.uid() for update;
   if not found then raise exception 'NOT_FOUND'; end if;
   if v.status <> 'new' then raise exception 'CANNOT_CANCEL'; end if;
@@ -524,7 +595,8 @@ returns void language sql security definer set search_path = '' as $$
   delete from public.push_tokens where token = p_token and user_id = auth.uid()
 $$;
 
--- Google Play requires in-app account deletion. Orders are kept (customer_id -> null).
+-- Google Play requires in-app account deletion. The customer's orders are kept
+-- for EKO's records (customer_id becomes null).
 create or replace function public.delete_my_account()
 returns void language plpgsql security definer set search_path = '' as $$
 begin
@@ -534,7 +606,7 @@ begin
 end $$;
 
 -- =====================================================================
--- ADMIN RPCs
+-- ADMIN FUNCTIONS (each one checks is_admin() first)
 -- =====================================================================
 create or replace function public.assert_admin() returns void
 language plpgsql stable security definer set search_path = '' as $$
@@ -546,10 +618,11 @@ end $$;
 create or replace function public.admin_save_product(p jsonb)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
-  v_id uuid := nullif(p->>'id', '')::uuid;
+  v_id uuid;
   v_images text[];
 begin
   perform public.assert_admin();
+  v_id := nullif(p->>'id', '')::uuid;
   if coalesce(trim(p->>'sku'), '') = '' or coalesce(trim(p->>'name'), '') = '' then
     raise exception 'SKU_AND_NAME_REQUIRED';
   end if;
@@ -587,7 +660,7 @@ exception when unique_violation then
   raise exception 'SKU_EXISTS';
 end $$;
 
--- Products are hard-deleted; past orders keep their own name/SKU/price copy.
+-- Past orders keep their own name/SKU/price copy.
 create or replace function public.admin_delete_product(p_id uuid)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
@@ -597,9 +670,10 @@ end $$;
 
 create or replace function public.admin_save_category(p jsonb)
 returns uuid language plpgsql security definer set search_path = '' as $$
-declare v_id uuid := nullif(p->>'id', '')::uuid;
+declare v_id uuid;
 begin
   perform public.assert_admin();
+  v_id := nullif(p->>'id', '')::uuid;
   if coalesce(trim(p->>'name_sq'), '') = '' then raise exception 'NAME_REQUIRED'; end if;
   if v_id is null then
     insert into public.categories (name_sq, name_en, sort_order, active)
@@ -623,6 +697,7 @@ begin
   delete from public.categories where id = p_id;
 end $$;
 
+-- Approve (true) or reject/revoke (false) a wholesale account.
 create or replace function public.admin_review_wholesale(p_user uuid, p_approve boolean)
 returns void language plpgsql security definer set search_path = '' as $$
 declare v public.profiles%rowtype;
@@ -663,14 +738,14 @@ begin
   end if;
 end $$;
 
--- Dashboard counters for the admin home screen.
 create or replace function public.admin_stats()
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 begin
   perform public.assert_admin();
   return jsonb_build_object(
     'new_orders', (select count(*) from public.orders where status = 'new'),
-    'open_orders', (select count(*) from public.orders where status in ('new','confirmed','preparing','shipped')),
+    'open_orders', (select count(*) from public.orders
+                    where status in ('new','confirmed','preparing','shipped','accepted')),
     'pending_wholesale', (select count(*) from public.profiles where wholesale_status = 'pending'),
     'products', (select count(*) from public.products where active),
     'customers', (select count(*) from public.profiles where role <> 'admin'),
@@ -679,26 +754,52 @@ begin
 end $$;
 
 -- =====================================================================
--- Notification dispatch (used by the Edge Function with the service role)
+-- NOTIFICATION DELIVERY (only for the Edge Function, via service_role)
+--
+-- 1. claim_notifications() leases up to N undelivered notifications for
+--    5 minutes (claimed_at, attempts + 1). Nothing is marked delivered yet.
+-- 2. The function sends push/e-mail.
+-- 3. finish_notifications() marks the successful ones dispatched and
+--    releases the failed ones for a retry. After 5 failed attempts a
+--    notification is given up (dispatched_at set, last_error kept).
+-- If the Edge Function crashes, the lease simply expires and the
+-- notification is retried. In-app notifications are always visible.
 -- =====================================================================
-create or replace function public.claim_notifications(p_limit integer default 100)
+drop function if exists public.claim_notifications(integer);
+
+create function public.claim_notifications(p_limit integer default 100)
 returns table (id uuid, recipient_id uuid, type text, data jsonb, created_at timestamptz,
-               recipient_role text, recipient_email text, recipient_language text, push_tokens text[])
+               attempts integer, recipient_role text, recipient_email text,
+               recipient_language text, push_tokens text[])
 language sql security definer set search_path = '' as $$
   with c as (
     select n.id from public.notifications n
-    where n.dispatched_at is null and n.created_at > now() - interval '2 days'
+    where n.dispatched_at is null
+      and n.created_at > now() - interval '2 days'
+      and (n.claimed_at is null or n.claimed_at < now() - interval '5 minutes')
     order by n.created_at
     limit greatest(least(p_limit, 500), 1)
     for update skip locked
   ), u as (
-    update public.notifications n set dispatched_at = now()
+    update public.notifications n set claimed_at = now(), attempts = n.attempts + 1
     from c where n.id = c.id
     returning n.*
   )
-  select u.id, u.recipient_id, u.type, u.data, u.created_at, p.role, p.email, p.language,
+  select u.id, u.recipient_id, u.type, u.data, u.created_at, u.attempts, p.role, p.email, p.language,
          coalesce((select array_agg(t.token) from public.push_tokens t where t.user_id = u.recipient_id), '{}')
   from u join public.profiles p on p.id = u.recipient_id
+$$;
+
+create or replace function public.finish_notifications(p_delivered uuid[], p_failed uuid[], p_error text default null)
+returns void language sql security definer set search_path = '' as $$
+  update public.notifications
+     set dispatched_at = now(), claimed_at = null, last_error = null
+   where id = any(coalesce(p_delivered, '{}')) and dispatched_at is null;
+  update public.notifications
+     set claimed_at = null,
+         last_error = left(coalesce(p_error, 'delivery failed'), 500),
+         dispatched_at = case when attempts >= 5 then now() else null end
+   where id = any(coalesce(p_failed, '{}')) and dispatched_at is null;
 $$;
 
 create or replace function public.forget_push_tokens(p_tokens text[])
@@ -707,23 +808,37 @@ returns void language sql security definer set search_path = '' as $$
 $$;
 
 -- =====================================================================
--- FUNCTION PRIVILEGES
--- Supabase grants EXECUTE to anon/authenticated by default: lock down
--- everything, then open only the RPCs the app calls.
+-- FUNCTION PRIVILEGES — EKO Store functions ONLY.
+-- Supabase gives anon/authenticated EXECUTE on new functions by default;
+-- remove that from every EKO function, then grant exactly what the app needs.
+-- Functions that are not part of EKO Store are not touched.
 -- =====================================================================
 do $$
-declare r record;
+declare
+  f text;
 begin
-  for r in select p.oid::regprocedure as sig from pg_proc p
-           join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
-  loop
-    execute format('revoke all on function %s from public, anon, authenticated', r.sig);
+  foreach f in array array[
+    'public.touch_updated_at()', 'public.is_admin()', 'public.price_tier()',
+    'public.notify_user(uuid, text, jsonb)', 'public.notify_admins(text, jsonb)',
+    'public.new_profile()', 'public.list_products()',
+    'public.update_my_profile(jsonb)', 'public.request_wholesale(text, text)',
+    'public.place_order(jsonb, jsonb)', 'public.cancel_my_order(uuid)',
+    'public.mark_notifications_read(uuid[])', 'public.register_push_token(text, text)',
+    'public.unregister_push_token(text)', 'public.delete_my_account()',
+    'public.assert_admin()', 'public.admin_save_product(jsonb)', 'public.admin_delete_product(uuid)',
+    'public.admin_save_category(jsonb)', 'public.admin_delete_category(uuid)',
+    'public.admin_review_wholesale(uuid, boolean)', 'public.admin_set_order_status(uuid, text, text)',
+    'public.admin_stats()', 'public.claim_notifications(integer)',
+    'public.finish_notifications(uuid[], uuid[], text)', 'public.forget_push_tokens(text[])'
+  ] loop
+    execute format('revoke all on function %s from public, anon, authenticated', f);
   end loop;
 end $$;
 
+-- Guests (anon): catalog without prices.
 grant execute on function public.list_products() to anon, authenticated;
+-- Logged-in users. is_admin() is used inside RLS policies, so it must be executable.
 grant execute on function public.is_admin() to authenticated;
-grant execute on function public.price_tier() to authenticated;
 grant execute on function public.update_my_profile(jsonb) to authenticated;
 grant execute on function public.request_wholesale(text, text) to authenticated;
 grant execute on function public.place_order(jsonb, jsonb) to authenticated;
@@ -732,6 +847,7 @@ grant execute on function public.mark_notifications_read(uuid[]) to authenticate
 grant execute on function public.register_push_token(text, text) to authenticated;
 grant execute on function public.unregister_push_token(text) to authenticated;
 grant execute on function public.delete_my_account() to authenticated;
+-- Admin functions: callable by logged-in users, but each refuses non-admins.
 grant execute on function public.admin_save_product(jsonb) to authenticated;
 grant execute on function public.admin_delete_product(uuid) to authenticated;
 grant execute on function public.admin_save_category(jsonb) to authenticated;
@@ -739,14 +855,13 @@ grant execute on function public.admin_delete_category(uuid) to authenticated;
 grant execute on function public.admin_review_wholesale(uuid, boolean) to authenticated;
 grant execute on function public.admin_set_order_status(uuid, text, text) to authenticated;
 grant execute on function public.admin_stats() to authenticated;
+-- Server side only (Edge Function).
 grant execute on function public.claim_notifications(integer) to service_role;
+grant execute on function public.finish_notifications(uuid[], uuid[], text) to service_role;
 grant execute on function public.forget_push_tokens(text[]) to service_role;
 
--- RLS policies call these helpers as the querying role.
-grant execute on function public.is_admin() to anon;
-
 -- =====================================================================
--- STORAGE: product photos (public read, admin write)
+-- STORAGE: product photos (anyone can view, only admins can change)
 -- =====================================================================
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('product-images', 'product-images', true, 5242880,
@@ -759,16 +874,18 @@ drop policy if exists "product images admin update" on storage.objects;
 drop policy if exists "product images admin delete" on storage.objects;
 drop policy if exists "product images admin select" on storage.objects;
 create policy "product images admin insert" on storage.objects for insert to authenticated
-  with check (bucket_id = 'product-images' and public.is_admin());
+  with check (bucket_id = 'product-images' and (select public.is_admin()));
 create policy "product images admin update" on storage.objects for update to authenticated
-  using (bucket_id = 'product-images' and public.is_admin());
+  using (bucket_id = 'product-images' and (select public.is_admin()))
+  with check (bucket_id = 'product-images' and (select public.is_admin()));
 create policy "product images admin delete" on storage.objects for delete to authenticated
-  using (bucket_id = 'product-images' and public.is_admin());
+  using (bucket_id = 'product-images' and (select public.is_admin()));
 create policy "product images admin select" on storage.objects for select to authenticated
-  using (bucket_id = 'product-images' and public.is_admin());
+  using (bucket_id = 'product-images' and (select public.is_admin()));
+
+commit;
 
 -- =====================================================================
--- First administrator (run once, after registering in the app):
---   update public.profiles set role = 'admin', wholesale_status = 'none'
---   where email = 'YOUR_EMAIL';
+-- First administrator (run ONCE, separately, after registering in the app):
+--   update public.profiles set role = 'admin' where email = 'YOUR_EMAIL';
 -- =====================================================================

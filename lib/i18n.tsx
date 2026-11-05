@@ -109,6 +109,8 @@ const sq = {
   st_shipped: 'E nisur',
   st_delivered: 'E dorëzuar',
   st_cancelled: 'E anuluar',
+  st_accepted: 'E pranuar',
+  st_completed: 'E përfunduar',
   tier_retail: 'Pakicë',
   tier_wholesale: 'Shumicë',
   // account
@@ -302,6 +304,8 @@ const en: Record<TKey, string> = {
   st_shipped: 'Shipped',
   st_delivered: 'Delivered',
   st_cancelled: 'Cancelled',
+  st_accepted: 'Accepted',
+  st_completed: 'Completed',
   tier_retail: 'Retail',
   tier_wholesale: 'Wholesale',
   myAccount: 'My account',

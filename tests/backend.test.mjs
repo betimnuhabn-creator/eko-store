@@ -275,18 +275,6 @@ describe('notifications', () => {
     ok(await admin.c.rpc('register_push_token', { p_token: `ExponentPushToken[test-${run}]`, p_platform: 'android' }));
     await fails(retail.c.from('push_tokens').select('*'));
   });
-
-  test('dispatch-notifications Edge Function claims queued notifications exactly once', async () => {
-    const r1 = await fetch(`${URL}/functions/v1/dispatch-notifications`, { method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' }, body: '{}' });
-    const j1 = await r1.json();
-    assert.equal(r1.status, 200, JSON.stringify(j1));
-    assert.ok(j1.claimed > 0);
-    const r2 = await fetch(`${URL}/functions/v1/dispatch-notifications`, { method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' }, body: '{}' });
-    const j2 = await r2.json();
-    assert.equal(j2.claimed, 0);
-    const left = ok(await service.from('notifications').select('id').is('dispatched_at', null));
-    assert.equal(left.length, 0);
-  });
 });
 
 describe('account deletion', () => {

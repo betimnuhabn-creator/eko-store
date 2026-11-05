@@ -51,7 +51,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Prices depend on who is logged in and on their role: reload when either changes.
-  const userKey = `${session?.user.id ?? 'guest'}:${profile?.role ?? ''}`;
+  const userKey = `${session?.user.id ?? 'guest'}:${profile?.role ?? ''}:${profile?.wholesale_status ?? ''}`;
   useEffect(() => {
     if (ready) reload();
   }, [ready, userKey, reload]);

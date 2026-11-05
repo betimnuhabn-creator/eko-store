@@ -4,7 +4,8 @@
 //
 // The app calls this function right after an action that creates notifications
 // (new order, wholesale request, order status change...). Calling it is always
-// safe: each notification is claimed atomically and sent at most once.
+// safe: notifications are leased atomically, marked delivered only after a
+// successful send, and retried (max 5 attempts) when sending fails.
 //
 // Secrets (supabase secrets set ...):
 //   RESEND_API_KEY      optional, enables admin e-mails
@@ -12,6 +13,7 @@
 //   ADMIN_EMAILS        optional, comma-separated extra recipients for admin e-mails
 //   EXPO_ACCESS_TOKEN   optional, only if "enhanced push security" is enabled in Expo
 //   APP_URL             optional, link to the web app shown in e-mails
+//   EXPO_PUSH_URL / RESEND_API_URL  optional overrides (used by the automated tests)
 
 // Calls a database function with the service role (no external imports needed).
 async function rpc(name: string, body: unknown) {
@@ -36,6 +38,7 @@ type Claimed = {
   recipient_email: string;
   recipient_language: 'sq' | 'en';
   push_tokens: string[];
+  attempts: number;
 };
 
 const cors = {
@@ -106,75 +109,104 @@ function route(type: string, d: Record<string, any>, role: string) {
   return '/notifications';
 }
 
-async function sendPush(items: Claimed[]) {
+const esc = (v: unknown) =>
+  String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+type Outcome = { failed: Map<string, string>; invalidTokens: string[]; sent: number };
+
+// Expo push. A notification fails if any of its messages could not be handed
+// to Expo (network error, HTTP error, or an error ticket other than
+// DeviceNotRegistered — those tokens are simply removed).
+async function sendPush(items: Claimed[], out: Outcome) {
   const messages = items.flatMap((n) => {
     const { title, body } = render(n.type, n.data as any, n.recipient_language);
     return n.push_tokens.map((to) => ({
-      to, title, body, sound: 'default', channelId: 'default', priority: 'high',
-      data: { url: route(n.type, n.data as any, n.recipient_role), notification_id: n.id },
+      nid: n.id,
+      msg: {
+        to, title, body, sound: 'default', channelId: 'default', priority: 'high',
+        data: { url: route(n.type, n.data as any, n.recipient_role), notification_id: n.id },
+      },
     }));
   });
-  if (!messages.length) return { sent: 0, invalid: [] as string[] };
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
   const token = Deno.env.get('EXPO_ACCESS_TOKEN');
   if (token) headers.Authorization = `Bearer ${token}`;
-  const invalid: string[] = [];
+  const url = Deno.env.get('EXPO_PUSH_URL') ?? 'https://exp.host/--/api/v2/push/send';
   for (let i = 0; i < messages.length; i += 100) {
     const chunk = messages.slice(i, i + 100);
-    const res = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST', headers, body: JSON.stringify(chunk),
-    });
-    const json = await res.json().catch(() => ({}));
-    (json.data ?? []).forEach((ticket: any, k: number) => {
-      if (ticket?.details?.error === 'DeviceNotRegistered') invalid.push(chunk[k].to);
-    });
+    try {
+      const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(chunk.map((c) => c.msg)) });
+      if (!res.ok) throw new Error(`push HTTP ${res.status}`);
+      const tickets: any[] = (await res.json()).data ?? [];
+      chunk.forEach((c, k) => {
+        const t = tickets[k];
+        if (t?.status === 'ok') out.sent++;
+        else if (t?.details?.error === 'DeviceNotRegistered') out.invalidTokens.push(c.msg.to);
+        else out.failed.set(c.nid, `push: ${t?.details?.error ?? t?.message ?? 'no ticket'}`);
+      });
+    } catch (e) {
+      chunk.forEach((c) => out.failed.set(c.nid, `push: ${(e as Error).message}`));
+    }
   }
-  return { sent: messages.length, invalid };
 }
 
-async function sendAdminEmails(items: Claimed[]) {
+// Admin e-mails: one e-mail per event (all admins in "to"). If e-mail is not
+// configured it is skipped; if sending fails, the event's notifications are retried.
+async function sendAdminEmails(items: Claimed[], out: Outcome) {
   const key = Deno.env.get('RESEND_API_KEY');
   const from = Deno.env.get('EMAIL_FROM');
-  if (!key || !from) return 0;
+  if (!key || !from) return;
   const extra = (Deno.env.get('ADMIN_EMAILS') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   const appUrl = Deno.env.get('APP_URL') ?? '';
-  // One e-mail per event (not per admin): group by type + payload.
+  const url = Deno.env.get('RESEND_API_URL') ?? 'https://api.resend.com/emails';
   const events = new Map<string, Claimed[]>();
   for (const n of items.filter((x) => x.recipient_role === 'admin')) {
     const k = n.type + JSON.stringify(n.data);
     events.set(k, [...(events.get(k) ?? []), n]);
   }
-  let sent = 0;
   for (const group of events.values()) {
     const n = group[0];
     const to = [...new Set([...group.map((g) => g.recipient_email).filter(Boolean), ...extra])];
     if (!to.length) continue;
     const { title, body } = render(n.type, n.data as any, 'sq');
     const link = appUrl ? `${appUrl.replace(/\/$/, '')}${route(n.type, n.data as any, 'admin')}` : '';
-    const html = `<div style="font-family:Arial,sans-serif"><h2 style="color:#1565C0">${title}</h2><p>${body}</p>${
-      link ? `<p><a href="${link}">Hap në EKO Store / Open in EKO Store</a></p>` : ''}</div>`;
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to, subject: `EKO Store: ${title}`, html }),
-    });
-    if (res.ok) sent++;
-    else console.error('resend', res.status, await res.text());
+    const html = `<div style="font-family:Arial,sans-serif"><h2 style="color:#0166B4">${esc(title)}</h2><p>${esc(body)}</p>${
+      link ? `<p><a href="${esc(link)}">Hap në EKO Store / Open in EKO Store</a></p>` : ''}</div>`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to, subject: `EKO Store: ${title}`, html }),
+      });
+      if (!res.ok) throw new Error(`email HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+      out.sent++;
+    } catch (e) {
+      group.forEach((g) => out.failed.set(g.id, (e as Error).message));
+    }
   }
-  return sent;
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   try {
+    // Leases the notifications; they are NOT marked delivered yet.
     const items = ((await rpc('claim_notifications', { p_limit: 200 })) ?? []) as Claimed[];
-    const push = await sendPush(items).catch((e) => (console.error('push', e), { sent: 0, invalid: [] }));
-    if (push.invalid.length) await rpc('forget_push_tokens', { p_tokens: push.invalid });
-    const emails = await sendAdminEmails(items).catch((e) => (console.error('email', e), 0));
-    return new Response(JSON.stringify({ claimed: items.length, push: push.sent, emails }), {
+    const out: Outcome = { failed: new Map(), invalidTokens: [], sent: 0 };
+    await sendPush(items, out);
+    await sendAdminEmails(items, out);
+    if (out.invalidTokens.length) await rpc('forget_push_tokens', { p_tokens: out.invalidTokens });
+    const failed = [...out.failed.keys()];
+    const delivered = items.map((n) => n.id).filter((id) => !out.failed.has(id));
+    await rpc('finish_notifications', {
+      p_delivered: delivered,
+      p_failed: failed,
+      p_error: [...new Set(out.failed.values())].join('; ').slice(0, 500) || null,
+    });
+    return new Response(JSON.stringify({ claimed: items.length, delivered: delivered.length, failed: failed.length, sent: out.sent }), {
       headers: { ...cors, 'Content-Type': 'application/json' },
     });
   } catch (e) {
+    // Claimed notifications are retried automatically after their 5-minute lease.
     console.error(e);
     return new Response(JSON.stringify({ error: String((e as Error).message ?? e) }), {
       status: 500, headers: { ...cors, 'Content-Type': 'application/json' },

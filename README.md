@@ -84,17 +84,21 @@ Upload `dist/` to any static host (Netlify, Vercel, Cloudflare Pages, or your ow
 ## 5. Tests (local, needs Docker)
 
 ```bash
-npm run db:start           # local Supabase
-npm run functions:serve    # in a second terminal
-npm run test:backend       # 29 checks: price visibility, permissions, orders, approvals, storage, notifications
-cp .env.example .env.local # point it at http://127.0.0.1:54321 + local anon key (npx supabase status)
-npm run test:e2e           # browser test: guest → register → order → admin approves → wholesale prices
+npm run db:start                 # local Supabase (same Postgres/Auth/Storage as hosted)
+npm run functions:serve:test     # second terminal: Edge Function wired to a fake push/e-mail server
+npm run test:migration           # 31 checks: empty project, re-run, rollback on error, v0.2 upgrade without data changes
+npm run test:security            # 34 checks: privileges, RLS, SECURITY DEFINER audit, direct API/GraphQL attacks, storage, wholesale approval
+npm run test:notifications       # 8 checks: delivery only marked done after success, retries, give-up after 5, crash recovery
+npm run test:backend             # 28 checks: catalog, orders, products, categories, account deletion
+cp .env.example .env.local       # point it at http://127.0.0.1:54321 + local publishable key (npx supabase status)
+npm run test:e2e                 # browser: guest → register → order → admin approves → wholesale prices
 ```
 
 ## Security notes
 
 - The app only ever uses the publishable/anon key. Every change goes through database functions that check who is calling, and clients have no direct write access to any table.
 - The `products` table cannot be read directly: `list_products()` returns the right price for the caller.
+- Notifications are marked delivered only after push/e-mail succeeded; failures are retried up to 5 times (`last_error` shows why).
 - Stock is **not** reserved automatically. EKO confirms availability after receiving the order (as requested). Stock is shown to customers only as "In stock / Available to order".
 
 ## Before going live

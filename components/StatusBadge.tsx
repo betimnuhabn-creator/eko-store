@@ -10,6 +10,8 @@ const tone: Record<OrderStatus, 'info' | 'success' | 'warning' | 'danger' | 'mut
   shipped: 'info',
   delivered: 'success',
   cancelled: 'danger',
+  accepted: 'info',
+  completed: 'success',
 };
 
 export function StatusBadge({ status }: { status: OrderStatus }) {
