@@ -12,3 +12,4 @@ supabase/.temp
 test-results/
 playwright-report/
 supabase/functions/.local-ca.crt
+.live-check.json

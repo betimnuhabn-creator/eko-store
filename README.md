@@ -31,6 +31,8 @@ tests/                   backend integration tests + browser end-to-end tests
 
 ## 1. Set up Supabase (once)
 
+**Detailed, click-by-click guide: [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)** (including a test you can run against your real project with only the publishable key).
+
 1. Create a project at supabase.com.
 2. **Database:** open *SQL Editor*, paste the whole file `supabase/migrations/20261105000000_eko_store_v1.sql` and run it.
    It works on an empty project **and** on a project where the old v0.2 `schema.sql` was run, and it keeps existing data. Running it twice is safe.
