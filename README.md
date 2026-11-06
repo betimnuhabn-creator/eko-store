@@ -70,7 +70,7 @@ eas init                  # creates the EAS project id, needed for push notifica
 eas build -p android --profile preview      # installable APK for testing
 eas build -p android --profile production   # .aab for Google Play
 ```
-Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` as EAS environment variables (`eas env:create`) or keep them in `.env` when building.
+The Supabase URL and publishable key go into `eas.json` (see [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md), step 1). Run `npm run check:config` before building: it rejects missing values and any secret key.
 
 **Push notifications on Android** need Firebase Cloud Messaging: create a Firebase project, add an Android app with package `com.ekoshpk.store`, and upload the FCM v1 service-account key with `eas credentials` (see Expo's "Push notifications setup" guide). Push does **not** work in Expo Go; use the APK. Admins receive push on every phone where they are logged in.
 

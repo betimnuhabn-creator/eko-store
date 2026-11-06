@@ -20,7 +20,8 @@
     "test:migration": "bash tests/migration.test.sh",
     "test:security": "supabase db reset && node --test tests/security.test.mjs",
     "test:notifications": "supabase db reset && node --test tests/notifications.test.mjs",
-    "test:notify-db": "supabase db reset && node --test tests/notify-db.test.mjs"
+    "test:notify-db": "supabase db reset && node --test tests/notify-db.test.mjs",
+    "check:config": "node scripts/check-config.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

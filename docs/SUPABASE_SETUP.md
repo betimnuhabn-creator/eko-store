@@ -4,20 +4,36 @@ The Android and web apps use **only** the Project URL and the **publishable** ke
 (`sb_publishable_…`, or the legacy `anon` key). Never put a `sb_secret_…` /
 `service_role` key or the database password in the app, in `.env`, or in chat.
 
-## Step 1 — App connection
+## Step 1 — App connection (URL + publishable key)
 
-Dashboard → **Project Settings → API** (or the **Connect** button): copy the Project URL.
+The app reads the connection in **one** file, `lib/supabase.ts`, from two variables:
 
-Create `.env` in the project folder (it is git-ignored):
+| Variable | Value | Where in Supabase |
+|---|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | `https://<project-ref>.supabase.co` | Project Settings → API (or **Connect**) → Project URL |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…` | Project Settings → API Keys → Publishable key |
 
+The `EXPO_PUBLIC_` prefix is required: it tells Expo to compile the value into the app.
+Both values are public. A secret key (`sb_secret_…`) or `service_role` key must never be used:
+the app refuses to start with one and `npm run check:config` reports it.
+
+**Android builds (EAS)**: add an `env` block to the build profiles in `eas.json`:
+
+```json
+"preview": {
+  "distribution": "internal",
+  "android": { "buildType": "apk" },
+  "env": {
+    "EXPO_PUBLIC_SUPABASE_URL": "https://<project-ref>.supabase.co",
+    "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_..."
+  }
+}
 ```
-EXPO_PUBLIC_SUPABASE_URL=https://YOUR-REF.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
-```
+(same `env` block in `production`).
 
-For Android builds, store the same two values in EAS:
-`eas env:create --name EXPO_PUBLIC_SUPABASE_URL --value https://YOUR-REF.supabase.co --environment preview --environment production --visibility plaintext`
-(and the same for `EXPO_PUBLIC_SUPABASE_ANON_KEY`).
+**Local development / web build**: copy `.env.example` to `.env` and fill in the same two values (`.env` is git-ignored).
+
+Check before building: `npm run check:config`.
 
 ## Step 2 — Database (tables, RLS, functions, storage)
 

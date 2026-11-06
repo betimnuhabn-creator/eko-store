@@ -9,7 +9,7 @@ import { CartProvider } from '../lib/cart';
 import { CatalogProvider } from '../lib/catalog';
 import { I18nProvider, useI18n } from '../lib/i18n';
 import { NotificationsProvider } from '../lib/notifications';
-import { isConfigured, supabase } from '../lib/supabase';
+import { configProblem, isConfigured, supabase } from '../lib/supabase';
 import { colors } from '../lib/theme';
 
 /** Keep the profile language in sync, so push/e-mail texts use the user's language. */
@@ -28,7 +28,7 @@ function NotConfigured() {
   const { t } = useI18n();
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <Text style={{ color: colors.danger, fontWeight: '700', textAlign: 'center' }}>{t('e_notConfigured')}</Text>
+      <Text style={{ color: colors.danger, fontWeight: '700', textAlign: 'center' }}>{t(configProblem === 'secret_key' ? 'e_secretKey' : configProblem === 'bad_url' ? 'e_badUrl' : 'e_notConfigured')}</Text>
     </View>
   );
 }

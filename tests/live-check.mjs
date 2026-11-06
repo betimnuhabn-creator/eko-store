@@ -19,8 +19,8 @@ if (existsSync('.env')) {
   }
 }
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-if (!URL || !KEY) throw new Error('Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY');
+const KEY = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+if (!URL || !KEY) throw new Error('Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
 if (/^sb_secret_/.test(KEY) || /service_role/.test(Buffer.from(KEY.split('.')[1] ?? '', 'base64').toString())) {
   throw new Error('This is a SECRET key. Use the publishable/anon key.');
 }

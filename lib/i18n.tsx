@@ -200,7 +200,9 @@ const sq = {
   e_BUSINESS_NAME_REQUIRED: 'Shkruani emrin e biznesit.',
   e_ADMIN_CANNOT_DELETE: 'Administratori nuk mund ta fshijë llogarinë nga aplikacioni.',
   e_network: 'Nuk ka lidhje me serverin. Kontrolloni internetin.',
-  e_notConfigured: 'Aplikacioni nuk është konfiguruar (mungon .env me Supabase URL dhe çelës).',
+  e_notConfigured: 'Aplikacioni nuk është konfiguruar: mungon EXPO_PUBLIC_SUPABASE_URL ose EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY.',
+  e_secretKey: 'Gabim sigurie: aplikacioni u ndërtua me një çelës SEKRET. Përdorni vetëm çelësin publishable (sb_publishable_…) dhe ndërtojeni përsëri.',
+  e_badUrl: 'Supabase URL nuk është i saktë. Duhet të jetë si https://xxxx.supabase.co',
 };
 
 export type TKey = keyof typeof sq;
@@ -391,7 +393,9 @@ const en: Record<TKey, string> = {
   e_BUSINESS_NAME_REQUIRED: 'Enter the business name.',
   e_ADMIN_CANNOT_DELETE: 'An administrator cannot delete their account from the app.',
   e_network: 'Cannot reach the server. Check your internet connection.',
-  e_notConfigured: 'The app is not configured (missing .env with Supabase URL and key).',
+  e_notConfigured: 'The app is not configured: EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY is missing.',
+  e_secretKey: 'Security error: the app was built with a SECRET key. Use only the publishable key (sb_publishable_…) and rebuild.',
+  e_badUrl: 'The Supabase URL is not valid. It must look like https://xxxx.supabase.co',
 };
 
 const dictionaries: Record<Lang, Record<TKey, string>> = { sq, en };
