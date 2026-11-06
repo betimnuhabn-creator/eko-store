@@ -19,7 +19,8 @@
     "functions:serve:test": "supabase functions serve --env-file tests/functions.test.env",
     "test:migration": "bash tests/migration.test.sh",
     "test:security": "supabase db reset && node --test tests/security.test.mjs",
-    "test:notifications": "supabase db reset && node --test tests/notifications.test.mjs"
+    "test:notifications": "supabase db reset && node --test tests/notifications.test.mjs",
+    "test:notify-db": "supabase db reset && node --test tests/notify-db.test.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

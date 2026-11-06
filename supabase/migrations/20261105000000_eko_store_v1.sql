@@ -49,7 +49,6 @@ create table if not exists public.profiles (
 
 alter table public.profiles
   add column if not exists email text not null default '',
-  add column if not exists wholesale_status text not null default 'none',
   add column if not exists business_name text not null default '',
   add column if not exists business_number text not null default '',
   add column if not exists address text not null default '',
@@ -57,18 +56,28 @@ alter table public.profiles
   add column if not exists language text not null default 'sq',
   add column if not exists updated_at timestamptz not null default now();
 
--- v0.2 stored the wholesale state as role='wholesale' + wholesale_approved.
--- Fill the NEW wholesale_status column from it (old columns stay untouched).
+-- wholesale_status is created here, and ONLY when it is created it is filled
+-- from the v0.2 columns (role='wholesale' + wholesale_approved):
+--   role 'wholesale' + approved      -> 'approved'  (keeps wholesale prices, as in v0.2)
+--   role 'wholesale' + not approved  -> 'pending'   (retail prices until an admin approves)
+--   any other role                   -> 'none'      (v0.2 gave them retail prices too)
+-- Later runs never touch it again, so admin decisions are never overwritten.
+-- The old columns themselves are left unchanged.
 do $$
 begin
-  if exists (select 1 from information_schema.columns
-             where table_schema = 'public' and table_name = 'profiles'
-               and column_name = 'wholesale_approved') then
-    execute $q$
-      update public.profiles
-         set wholesale_status = case when wholesale_approved then 'approved' else 'pending' end
-       where wholesale_status = 'none' and role = 'wholesale'
-    $q$;
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'profiles'
+                   and column_name = 'wholesale_status') then
+    alter table public.profiles add column wholesale_status text not null default 'none';
+    if exists (select 1 from information_schema.columns
+               where table_schema = 'public' and table_name = 'profiles'
+                 and column_name = 'wholesale_approved') then
+      execute $q$
+        update public.profiles
+           set wholesale_status = case when coalesce(wholesale_approved, false) then 'approved' else 'pending' end
+         where role = 'wholesale'
+      $q$;
+    end if;
   end if;
 end $$;
 
@@ -124,6 +133,7 @@ create table if not exists public.notifications (
 -- only marked dispatched after delivery succeeded (or after 5 failed tries).
 alter table public.notifications
   add column if not exists claimed_at timestamptz,
+  add column if not exists claim_token uuid,
   add column if not exists attempts integer not null default 0,
   add column if not exists last_error text;
 
@@ -395,6 +405,12 @@ revoke all on public.profiles, public.categories, public.products, public.orders
 
 grant select on public.categories to anon, authenticated;
 grant select on public.profiles, public.orders, public.order_items, public.notifications to authenticated;
+-- The order-number counter is never used directly by the API.
+do $$
+declare v_seq text := pg_get_serial_sequence('public.orders', 'order_number');
+begin
+  execute format('revoke all on sequence %s from public, anon, authenticated', v_seq);
+end $$;
 -- products:    NO access (prices only via list_products()).
 -- push_tokens: NO access (register_push_token()).
 
@@ -757,22 +773,31 @@ end $$;
 -- NOTIFICATION DELIVERY (only for the Edge Function, via service_role)
 --
 -- 1. claim_notifications() leases up to N undelivered notifications for
---    5 minutes (claimed_at, attempts + 1). Nothing is marked delivered yet.
--- 2. The function sends push/e-mail.
--- 3. finish_notifications() marks the successful ones dispatched and
---    releases the failed ones for a retry. After 5 failed attempts a
---    notification is given up (dispatched_at set, last_error kept).
--- If the Edge Function crashes, the lease simply expires and the
--- notification is retried. In-app notifications are always visible.
+--    5 minutes and stamps them with a NEW claim_token (attempts + 1).
+--    Nothing is marked delivered yet.
+-- 2. The worker sends push/e-mail.
+-- 3. finish_notifications(claim_token, delivered, failed) marks the delivered
+--    ones dispatched and releases the failed ones for a retry. It only touches
+--    rows that STILL carry that claim_token: a stale worker whose lease expired
+--    and was re-claimed by another worker cannot acknowledge anything.
+--    An id listed as both delivered and failed counts as failed.
+--    After 5 failed attempts a notification is given up (dispatched_at set,
+--    last_error kept). Returns the number of rows updated.
+-- If a worker crashes, its lease expires and the notifications are retried.
+-- In-app notifications are always visible, independent of delivery.
 -- =====================================================================
 drop function if exists public.claim_notifications(integer);
+drop function if exists public.finish_notifications(uuid[], uuid[], text);
+drop function if exists public.finish_notifications(uuid, uuid[], uuid[], text);
 
 create function public.claim_notifications(p_limit integer default 100)
 returns table (id uuid, recipient_id uuid, type text, data jsonb, created_at timestamptz,
-               attempts integer, recipient_role text, recipient_email text,
+               attempts integer, claim_token uuid, recipient_role text, recipient_email text,
                recipient_language text, push_tokens text[])
 language sql security definer set search_path = '' as $$
-  with c as (
+  with tok as materialized (
+    select gen_random_uuid() as t
+  ), c as (
     select n.id from public.notifications n
     where n.dispatched_at is null
       and n.created_at > now() - interval '2 days'
@@ -781,26 +806,45 @@ language sql security definer set search_path = '' as $$
     limit greatest(least(p_limit, 500), 1)
     for update skip locked
   ), u as (
-    update public.notifications n set claimed_at = now(), attempts = n.attempts + 1
+    update public.notifications n
+       set claimed_at = now(), claim_token = (select t from tok), attempts = n.attempts + 1
     from c where n.id = c.id
     returning n.*
   )
-  select u.id, u.recipient_id, u.type, u.data, u.created_at, u.attempts, p.role, p.email, p.language,
+  select u.id, u.recipient_id, u.type, u.data, u.created_at, u.attempts, u.claim_token,
+         p.role, p.email, p.language,
          coalesce((select array_agg(t.token) from public.push_tokens t where t.user_id = u.recipient_id), '{}')
   from u join public.profiles p on p.id = u.recipient_id
 $$;
 
-create or replace function public.finish_notifications(p_delivered uuid[], p_failed uuid[], p_error text default null)
-returns void language sql security definer set search_path = '' as $$
+create function public.finish_notifications(p_claim uuid, p_delivered uuid[], p_failed uuid[],
+                                            p_error text default null)
+returns integer language plpgsql security definer set search_path = '' as $$
+declare
+  v_done integer;
+  v_failed integer;
+begin
+  if p_claim is null then return 0; end if;
+
   update public.notifications
-     set dispatched_at = now(), claimed_at = null, last_error = null
-   where id = any(coalesce(p_delivered, '{}')) and dispatched_at is null;
+     set dispatched_at = now(), claimed_at = null, claim_token = null, last_error = null
+   where claim_token = p_claim
+     and dispatched_at is null
+     and id = any(coalesce(p_delivered, '{}'))
+     and not (id = any(coalesce(p_failed, '{}')));
+  get diagnostics v_done = row_count;
+
   update public.notifications
-     set claimed_at = null,
+     set claimed_at = null, claim_token = null,
          last_error = left(coalesce(p_error, 'delivery failed'), 500),
          dispatched_at = case when attempts >= 5 then now() else null end
-   where id = any(coalesce(p_failed, '{}')) and dispatched_at is null;
-$$;
+   where claim_token = p_claim
+     and dispatched_at is null
+     and id = any(coalesce(p_failed, '{}'));
+  get diagnostics v_failed = row_count;
+
+  return v_done + v_failed;
+end $$;
 
 create or replace function public.forget_push_tokens(p_tokens text[])
 returns void language sql security definer set search_path = '' as $$
@@ -829,7 +873,7 @@ begin
     'public.admin_save_category(jsonb)', 'public.admin_delete_category(uuid)',
     'public.admin_review_wholesale(uuid, boolean)', 'public.admin_set_order_status(uuid, text, text)',
     'public.admin_stats()', 'public.claim_notifications(integer)',
-    'public.finish_notifications(uuid[], uuid[], text)', 'public.forget_push_tokens(text[])'
+    'public.finish_notifications(uuid, uuid[], uuid[], text)', 'public.forget_push_tokens(text[])'
   ] loop
     execute format('revoke all on function %s from public, anon, authenticated', f);
   end loop;
@@ -857,7 +901,7 @@ grant execute on function public.admin_set_order_status(uuid, text, text) to aut
 grant execute on function public.admin_stats() to authenticated;
 -- Server side only (Edge Function).
 grant execute on function public.claim_notifications(integer) to service_role;
-grant execute on function public.finish_notifications(uuid[], uuid[], text) to service_role;
+grant execute on function public.finish_notifications(uuid, uuid[], uuid[], text) to service_role;
 grant execute on function public.forget_push_tokens(text[]) to service_role;
 
 -- =====================================================================

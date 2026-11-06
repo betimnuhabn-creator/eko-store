@@ -84,11 +84,26 @@ describe('database catalog audit', () => {
   });
 
   test('notification delivery functions are service_role only', () => {
-    for (const f of ['claim_notifications(integer)', 'finish_notifications(uuid[],uuid[],text)', 'forget_push_tokens(text[])']) {
+    for (const f of ['claim_notifications(integer)', 'finish_notifications(uuid,uuid[],uuid[],text)', 'forget_push_tokens(text[])']) {
       assert.equal(sql(`select has_function_privilege('service_role','public.${f}','execute')`), 't');
       assert.equal(sql(`select has_function_privilege('authenticated','public.${f}','execute')`), 'f');
       assert.equal(sql(`select has_function_privilege('anon','public.${f}','execute')`), 'f');
     }
+  });
+
+  test('API roles cannot use the order-number counter', () => {
+    const seq = sql(`select pg_get_serial_sequence('public.orders','order_number')`);
+    for (const role of ['anon', 'authenticated']) {
+      for (const priv of ['usage', 'select', 'update']) {
+        assert.equal(sql(`select has_sequence_privilege('${role}','${seq}','${priv}')`), 'f', `${role} ${priv}`);
+      }
+    }
+  });
+
+  test('SECURITY DEFINER functions are owned by postgres (not by an API role)', () => {
+    const owners = sql(`select string_agg(distinct pg_get_userbyid(p.proowner), ',') from pg_proc p
+      join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prosecdef`);
+    assert.equal(owners, 'postgres');
   });
 
   test('every admin function checks is_admin() first', () => {
@@ -178,7 +193,9 @@ describe('direct API attacks on wholesale prices', () => {
     await denied(retail.c.rpc('notify_admins', { p_type: 'x', p_data: {} }));
     await denied(retail.c.rpc('notify_user', { p_user: retail.id, p_type: 'x', p_data: {} }));
     await denied(retail.c.rpc('claim_notifications', { p_limit: 10 }));
-    await denied(retail.c.rpc('finish_notifications', { p_delivered: [], p_failed: [], p_error: null }));
+    await denied(retail.c.rpc('finish_notifications', { p_claim: null, p_delivered: [], p_failed: [], p_error: null }));
+    await denied(client().rpc('finish_notifications', { p_claim: null, p_delivered: [], p_failed: [], p_error: null }));
+    await denied(client().rpc('claim_notifications', { p_limit: 1 }));
     await denied(client().rpc('is_admin'));
   });
 

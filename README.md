@@ -86,8 +86,9 @@ Upload `dist/` to any static host (Netlify, Vercel, Cloudflare Pages, or your ow
 ```bash
 npm run db:start                 # local Supabase (same Postgres/Auth/Storage as hosted)
 npm run functions:serve:test     # second terminal: Edge Function wired to a fake push/e-mail server
-npm run test:migration           # 31 checks: empty project, re-run, rollback on error, v0.2 upgrade without data changes
-npm run test:security            # 34 checks: privileges, RLS, SECURITY DEFINER audit, direct API/GraphQL attacks, storage, wholesale approval
+npm run test:migration           # 58 checks: empty project, re-runs, rollback on error, v0.2 upgrade (all wholesale_approved cases), order numbers, no data loss
+npm run test:security            # 36 checks: privileges, RLS, SECURITY DEFINER audit, direct API/GraphQL attacks, storage, wholesale approval
+npm run test:notify-db           # 15 checks: claim tokens, stale workers, both finish_notifications() updates, give-up
 npm run test:notifications       # 8 checks: delivery only marked done after success, retries, give-up after 5, crash recovery
 npm run test:backend             # 28 checks: catalog, orders, products, categories, account deletion
 cp .env.example .env.local       # point it at http://127.0.0.1:54321 + local publishable key (npx supabase status)

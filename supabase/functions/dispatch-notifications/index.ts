@@ -39,6 +39,7 @@ type Claimed = {
   recipient_language: 'sq' | 'en';
   push_tokens: string[];
   attempts: number;
+  claim_token: string;
 };
 
 const cors = {
@@ -197,7 +198,9 @@ Deno.serve(async (req) => {
     if (out.invalidTokens.length) await rpc('forget_push_tokens', { p_tokens: out.invalidTokens });
     const failed = [...out.failed.keys()];
     const delivered = items.map((n) => n.id).filter((id) => !out.failed.has(id));
-    await rpc('finish_notifications', {
+    // Only this worker's claim is acknowledged (stale workers are ignored by the DB).
+    if (items.length) await rpc('finish_notifications', {
+      p_claim: items[0].claim_token,
       p_delivered: delivered,
       p_failed: failed,
       p_error: [...new Set(out.failed.values())].join('; ').slice(0, 500) || null,
