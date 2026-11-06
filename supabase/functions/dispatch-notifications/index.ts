@@ -16,14 +16,29 @@
 //   EXPO_PUSH_URL / RESEND_API_URL  optional overrides (used by the automated tests)
 
 // Calls a database function with the service role (no external imports needed).
+// Server-side key injected by Supabase into every Edge Function. Projects with
+// the new API keys provide SUPABASE_SECRET_KEYS (JSON); older ones the legacy
+// service_role JWT. Either works; it never leaves the server.
+function serverKey(): string {
+  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (legacy) return legacy;
+  const single = Deno.env.get('SUPABASE_SECRET_KEY');
+  if (single) return single;
+  try {
+    const keys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}');
+    const k = keys.default ?? Object.values(keys)[0];
+    if (typeof k === 'string') return k;
+  } catch { /* fall through */ }
+  throw new Error('No server key available in the Edge Function environment');
+}
+
 async function rpc(name: string, body: unknown) {
   const url = Deno.env.get('SUPABASE_URL')!;
-  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const res = await fetch(`${url}/rest/v1/rpc/${name}`, {
-    method: 'POST',
-    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const key = serverKey();
+  const headers: Record<string, string> = { apikey: key, 'Content-Type': 'application/json' };
+  // Only a JWT (legacy key) belongs in Authorization; new sb_secret_ keys go in apikey only.
+  if (key.startsWith('eyJ')) headers.Authorization = `Bearer ${key}`;
+  const res = await fetch(`${url}/rest/v1/rpc/${name}`, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`${name}: ${res.status} ${await res.text()}`);
   const text = await res.text();
   return text ? JSON.parse(text) : null;
