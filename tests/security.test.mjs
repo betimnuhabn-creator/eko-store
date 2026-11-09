@@ -20,7 +20,7 @@ const EKO_DEFINER_FUNCTIONS = [
   'price_tier', 'process_offer_activations', 'products_promo_trigger', 'promo_fanout', 'promo_queue_new_product',
   'promo_queue_price', 'register_push_token', 'request_wholesale', 'set_my_promo_preferences', 'unregister_push_token',
   'update_my_profile',
-].concat(['best_offer']).sort();
+].concat(['best_offer', 'promo_dispatch', 'promo_dispatch_status']).sort();
 const AUTHENTICATED_EXEC = [
   'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
   'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
@@ -394,6 +394,9 @@ describe('offers + promotional notifications: abuse attempts', () => {
       await denied(c.rpc('process_offer_activations'));
       await denied(c.rpc('promo_fanout', { p_limit: 200 }));
       await denied(c.rpc('products_promo_trigger'));
+      await denied(c.rpc('promo_dispatch'));                                             // would make the DB call out
+      await denied(c.rpc('promo_dispatch_status'));
+      await denied(c.rpc('promo_functions_url_valid', { u: 'x' }));
     }
   });
 
@@ -436,9 +439,25 @@ describe('offers + promotional notifications: abuse attempts', () => {
   test('admins can only point the scheduler at a Supabase functions URL', async () => {
     const admin = await makeAdmin('sec-promo-admin');
     for (const url of ['http://example.com', 'https://evil.com/functions/v1', 'https://x.supabase.co.evil.com/functions/v1',
-      "https://x.supabase.co/functions/v1'; drop table x;--"]) {
+      "https://x.supabase.co/functions/v1'; drop table x;--", 'http://abc.supabase.co/functions/v1',
+      'https://abc.supabase.co/functions/v1/../../rest/v1', 'https://abc.supabase.co/functions/v1?x=1',
+      'https://abc.supabase.co:8443/functions/v1', 'https://a-b.supabase.co/functions/v1', 'https://abc.supabase.co/functions/v1\nx']) {
       await denied(admin.c.rpc('admin_set_promo_settings', { p: { functions_url: url } }), /INVALID_FUNCTIONS_URL/);
     }
     assert.equal(settingsNow(), settings0);
+    // A real project address is accepted (trailing slash and spaces removed), then cleared again.
+    ok(await admin.c.rpc('admin_set_promo_settings', { p: { functions_url: ' https://abcdefghijklmnopqrst.supabase.co/functions/v1/ ' } }));
+    assert.equal(sql('select functions_url from public.promo_settings'), 'https://abcdefghijklmnopqrst.supabase.co/functions/v1');
+    ok(await admin.c.rpc('admin_set_promo_settings', { p: { functions_url: '' } }));
+    assert.equal(settingsNow(), settings0);
+  });
+
+  test('the scheduler only calls a valid functions address', () => {
+    const valid = (u) => sql(`select public.promo_functions_url_valid(${u === null ? 'null' : `'${u}'`})`);
+    assert.equal(valid('https://mfpmcriffqlhlgaptdzx.supabase.co/functions/v1'), 't');
+    for (const u of [null, '', 'http://example.com', 'https://evil.com/functions/v1', 'https://x.supabase.co.evil.com/functions/v1',
+      'https://x.supabase.co/functions/v1/', 'http://x.supabase.co/functions/v1', 'https://x.supabase.co/rest/v1']) {
+      assert.equal(valid(u), 'f', String(u));
+    }
   });
 });

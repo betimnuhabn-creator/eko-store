@@ -66,9 +66,20 @@ create table if not exists public.promo_settings (
   daily_cap integer not null default 3 check (daily_cap between 0 and 50),
   debounce_minutes integer not null default 5 check (debounce_minutes between 0 and 1440),
   functions_url text not null default '',          -- https://<ref>.supabase.co/functions/v1 (scheduler)
+  dispatch_request_id bigint,                      -- last scheduler HTTP request (pg_net id)
   updated_at timestamptz not null default now()
 );
+alter table public.promo_settings add column if not exists dispatch_request_id bigint;
 insert into public.promo_settings (id) values (true) on conflict (id) do nothing;
+
+-- The ONLY addresses the scheduler may call: this project's Edge Functions
+-- (https://<project-ref>.supabase.co/functions/v1, no trailing slash), or the
+-- gateway of a local Supabase CLI stack (development/tests only).
+create or replace function public.promo_functions_url_valid(u text)
+returns boolean language sql immutable set search_path = '' as $$
+  select coalesce(u ~ '^https://[a-z0-9]+\.supabase\.co/functions/v1$'
+                  or u = 'http://kong:8000/functions/v1', false)
+$$;
 
 -- Opt-in preferences (default OFF) and the tester flag (set by admins only).
 alter table public.profiles
@@ -471,6 +482,46 @@ begin
 end $$;
 
 -- =====================================================================
+-- 6b. DELIVERY CALL (scheduler only)
+-- =====================================================================
+-- Called every minute by pg_cron. Does nothing unless an admin has saved a
+-- valid functions_url and pg_net is installed. Sends an empty POST to
+-- dispatch-notifications WITHOUT any key: the function must be deployed with
+-- "Verify JWT" OFF (it reads no input and only delivers what the database
+-- has already queued). The request id is kept so that the result
+-- (HTTP 200, or 401 if Verify JWT is ON) can be checked: promo_dispatch_status().
+create or replace function public.promo_dispatch()
+returns bigint language plpgsql security definer set search_path = '' as $$
+declare u text; rid bigint;
+begin
+  select functions_url into u from public.promo_settings where id;
+  if not public.promo_functions_url_valid(u) or to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') is null then
+    return null;
+  end if;
+  execute 'select net.http_post(url := $1, body := ''{}''::jsonb, '
+       || 'headers := ''{"Content-Type": "application/json"}''::jsonb, timeout_milliseconds := 30000)'
+     into rid using u || '/dispatch-notifications';
+  update public.promo_settings set dispatch_request_id = rid where id;
+  return rid;
+end $$;
+
+-- Result of the scheduler's last call (read-only; pg_net keeps responses ~6 h).
+create or replace function public.promo_dispatch_status()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare rid bigint; r jsonb;
+begin
+  select dispatch_request_id into rid from public.promo_settings where id;
+  if rid is null then return jsonb_build_object('state', 'not_called'); end if;
+  if to_regclass('net._http_response') is null then return jsonb_build_object('state', 'no_pg_net'); end if;
+  execute 'select jsonb_build_object(''state'', case when status_code between 200 and 299 then ''ok'' else ''error'' end,
+                                      ''status_code'', status_code, ''timed_out'', timed_out,
+                                      ''error'', left(coalesce(error_msg, ''''), 200), ''at'', created)
+             from net._http_response where id = $1'
+     into r using rid;
+  return coalesce(r, jsonb_build_object('state', 'pending', 'request_id', rid));
+end $$;
+
+-- =====================================================================
 -- 7. CUSTOMER + ADMIN FUNCTIONS
 -- =====================================================================
 create or replace function public.set_my_promo_preferences(p_new_products boolean, p_offers boolean, p_price_changes boolean)
@@ -607,6 +658,7 @@ begin
   return jsonb_build_object(
     'enabled', s.enabled, 'test_only', s.test_only, 'daily_cap', s.daily_cap,
     'debounce_minutes', s.debounce_minutes, 'functions_url', s.functions_url,
+    'dispatch', public.promo_dispatch_status(),
     'testers', (select count(*) from public.profiles where promo_tester),
     'opted_in', (select count(*) from public.profiles
                   where role <> 'admin' and (promo_new_products or promo_offers or promo_price_changes)),
@@ -625,7 +677,7 @@ returns void language plpgsql security definer set search_path = '' as $$
 begin
   perform public.assert_admin();
   if p ? 'functions_url' and coalesce(p->>'functions_url', '') <> ''
-     and (p->>'functions_url') !~ '^https://[a-z0-9-]+\.supabase\.co/functions/v1/?$' then
+     and not public.promo_functions_url_valid(rtrim(trim(p->>'functions_url'), '/')) then
     raise exception 'INVALID_FUNCTIONS_URL';
   end if;
   update public.promo_settings set
@@ -633,7 +685,7 @@ begin
     test_only = coalesce((p->>'test_only')::boolean, test_only),
     daily_cap = coalesce((p->>'daily_cap')::integer, daily_cap),
     debounce_minutes = coalesce((p->>'debounce_minutes')::integer, debounce_minutes),
-    functions_url = coalesce(rtrim(p->>'functions_url', '/'), functions_url),
+    functions_url = coalesce(rtrim(trim(p->>'functions_url'), '/'), functions_url),
     updated_at = now()
   where id;
 end $$;
@@ -669,7 +721,8 @@ begin
     'public.set_my_promo_preferences(boolean, boolean, boolean)', 'public.admin_list_offers()',
     'public.admin_save_offer(jsonb)', 'public.admin_set_offer_active(uuid, boolean)',
     'public.admin_cancel_offer(uuid)', 'public.admin_get_promo_settings()',
-    'public.admin_set_promo_settings(jsonb)', 'public.admin_set_promo_tester(uuid, boolean)'
+    'public.admin_set_promo_settings(jsonb)', 'public.admin_set_promo_tester(uuid, boolean)',
+    'public.promo_functions_url_valid(text)', 'public.promo_dispatch()', 'public.promo_dispatch_status()'
   ] loop
     execute format('revoke all on function %s from public, anon, authenticated', f);
   end loop;
@@ -692,7 +745,7 @@ grant execute on function public.promo_fanout(integer) to service_role;
 -- =====================================================================
 -- 9. SCHEDULER (pg_cron, if available): every minute
 --    * record offers that just became live and fan out waiting events
---    * call the Edge Function to deliver (needs promo_settings.functions_url)
+--    * call the Edge Function to deliver (promo_dispatch; needs a valid functions_url)
 -- =====================================================================
 -- Optional: if pg_cron / pg_net cannot be enabled here, the rest of the
 -- migration still succeeds (offers start/expire on time anyway; activation
@@ -706,16 +759,9 @@ begin
         'select public.process_offer_activations(), public.promo_fanout(20)');
       if exists (select 1 from pg_available_extensions where name = 'pg_net') then
         create extension if not exists pg_net with schema extensions;   -- not in "public"
-        -- Does nothing until an admin saves functions_url (validated by
-        -- admin_set_promo_settings: https://<ref>.supabase.co/functions/v1).
-        -- The request carries no key: dispatch-notifications takes no input and
-        -- only delivers what the database has already queued.
-        perform cron.schedule('eko-dispatch-minutely', '* * * * *',
-          $c$select net.http_post(url := s.functions_url || '/dispatch-notifications',
-                                  body := '{}'::jsonb,
-                                  headers := '{"Content-Type": "application/json"}'::jsonb,
-                                  timeout_milliseconds := 30000)
-             from public.promo_settings s where s.id and s.functions_url ~ '^https?://'$c$);
+        -- Does nothing until an admin saves a valid functions_url
+        -- (see promo_functions_url_valid and promo_dispatch above).
+        perform cron.schedule('eko-dispatch-minutely', '* * * * *', 'select public.promo_dispatch()');
       end if;
       -- Keep the scheduler's own run log small (only the eko-* jobs' entries,
       -- older than 7 days; no business data).

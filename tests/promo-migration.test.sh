@@ -76,7 +76,7 @@ expect "promotional notifications OFF and in test mode" "select enabled::text||'
 expect "customers' promo preferences default OFF (opt-in)" "select count(*) from public.profiles where promo_new_products or promo_offers or promo_price_changes" "0"
 expect "existing notifications are category 'order'" "select count(*) from public.notifications where category <> 'order'" "0"
 expect "scheduler jobs created" "select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'eko-%'" "eko-cron-log-cleanup,eko-dispatch-minutely,eko-promo-minutely"
-expect "dispatch job: 30 s HTTP timeout, only when a URL is saved" "select (command like '%timeout_milliseconds := 30000%' and command like '%functions_url ~%')::text from cron.job where jobname='eko-dispatch-minutely'" "true"
+expect "promo_dispatch: 30 s HTTP timeout, only for a valid URL" "select (prosrc like '%timeout_milliseconds := 30000%' and prosrc like '%promo_functions_url_valid(u)%')::text from pg_proc where proname='promo_dispatch'" "true"
 expect "log cleanup only touches eko-* job entries" "select (command like '%jobname like ''eko-%''%')::text from cron.job where jobname='eko-cron-log-cleanup'" "true"
 expect "pg_net installed outside public" "select n.nspname from pg_extension e join pg_namespace n on n.oid=e.extnamespace where e.extname='pg_net'" "extensions"
 expect "RLS on all 4 new tables" "select count(*) from pg_tables where schemaname='public' and tablename in ('offers','offer_items','promo_events','promo_settings') and rowsecurity" "4"
@@ -95,6 +95,19 @@ expect "...and, with notifications OFF, suppressed it (nobody notified)" "select
 expect "no promo notification was created" "select count(*) from public.notifications where category='promo'" "0"
 expect "regular product price unchanged by the offer" "select retail_price::text from public.products where id='$PID'" "100.00"
 
-echo "D. Back to the normal local database"
+echo "D. Scheduler -> dispatch-notifications (real pg_cron tick, local Edge Function, Verify JWT OFF)"
+expect "dispatch job calls promo_dispatch() only" "select command from cron.job where jobname='eko-dispatch-minutely'" "select public.promo_dispatch()"
+for bad in "" "http://example.com" "https://evil.com/functions/v1" "https://x.supabase.co.evil.com/functions/v1"; do
+  q "update public.promo_settings set functions_url = '$bad'"
+  expect "no HTTP request for functions_url='$bad'" "select coalesce(public.promo_dispatch()::text, 'none')" "none"
+done
+q "update public.promo_settings set functions_url = 'http://kong:8000/functions/v1', dispatch_request_id = null"
+echo "    (waiting up to 75 s for pg_cron + HTTP response)"
+for i in $(seq 1 30); do sleep 5; [[ "$(q "select public.promo_dispatch_status()->>'state'")" == "ok" ]] && break; done
+expect "pg_cron reached dispatch-notifications: HTTP 200" "select (public.promo_dispatch_status()->>'status_code')" "200"
+expect "...and the function answered normally" "select (content::jsonb ? 'claimed')::text from net._http_response where id = (select dispatch_request_id from public.promo_settings)" "true"
+q "update public.promo_settings set functions_url = ''"
+
+echo "E. Back to the normal local database"
 npx supabase db reset >/dev/null 2>&1 && ok "reset" || bad "reset failed"
 echo; echo "$pass passed, $fail failed"; [[ $fail -eq 0 ]]

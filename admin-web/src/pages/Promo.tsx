@@ -86,6 +86,16 @@ export function Promo() {
           >
             {t('save')}
           </button>
+          {s.dispatch && s.dispatch.state !== 'no_pg_net' && (
+            <p className={`small ${s.dispatch.state === 'error' ? 'alert alert-warn' : 'muted'}`} data-testid="dispatch-status">
+              {s.dispatch.state === 'ok'
+                ? `✓ ${t('dispatchOk')} (HTTP ${s.dispatch.status_code}, ${formatBelgrade(s.dispatch.at!)})`
+                : s.dispatch.state === 'error'
+                  ? `${t('dispatchError')}: ${s.dispatch.timed_out ? 'timeout' : s.dispatch.status_code ? `HTTP ${s.dispatch.status_code}` : s.dispatch.error}`
+                    + (s.dispatch.status_code === 401 ? ` — ${t('dispatchJwtHint')}` : '')
+                  : t(s.dispatch.state === 'pending' ? 'dispatchPending' : 'dispatchNotCalled')}
+            </p>
+          )}
           <p className="muted small">
             {t('promoTesters')}: {s.testers} · {t('promoOptedIn')}: {s.opted_in} · {t('promoPending')}: {s.pending_events}
           </p>

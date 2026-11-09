@@ -53,6 +53,8 @@ export type PromoSettings = {
   daily_cap: number;
   debounce_minutes: number;
   functions_url: string;
+  /** Result of the scheduler's last call to dispatch-notifications. */
+  dispatch?: { state: 'not_called' | 'pending' | 'ok' | 'error' | 'no_pg_net'; status_code?: number | null; timed_out?: boolean | null; error?: string; at?: string };
   testers: number;
   opted_in: number;
   pending_events: number;

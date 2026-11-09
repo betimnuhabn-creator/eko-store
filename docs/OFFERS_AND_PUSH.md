@@ -48,7 +48,10 @@
    it only delivers what the database has already queued under its own rules (opt-in,
    test mode, daily cap, one notification per event and person) — and returns no details.
 3. **Scheduler address** — PC panel → *Njoftimet promocionale* → *Adresa e funksioneve*:
-   `https://mfpmcriffqlhlgaptdzx.supabase.co/functions/v1` → *Ruaj*.
+   `https://mfpmcriffqlhlgaptdzx.supabase.co/functions/v1` → *Ruaj*. Only this form
+   (`https://<ref>.supabase.co/functions/v1`) is accepted. Within a minute the panel shows
+   **✓ Planifikuesi funksionon (HTTP 200)**; *HTTP 401* means Verify JWT is still ON for
+   `dispatch-notifications`. SQL check: `select public.promo_dispatch_status();`
 4. **Android push (Firebase)** — required for notifications on the phone:
    * console.firebase.google.com → new project → add Android app, package `com.ekoshpk.store`
      → download `google-services.json`.
