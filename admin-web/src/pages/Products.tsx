@@ -168,7 +168,7 @@ export function Products() {
           <Empty text={t('noProducts')} />
         ) : (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table responsive">
               <thead>
                 <tr>
                   <th />
@@ -189,18 +189,18 @@ export function Products() {
                   const r = parseNumber(val(p, d, 'retail'));
                   return (
                     <tr key={p.id} className={dirty ? 'dirty' : ''} data-testid={`row-${p.sku}`}>
-                      <td>
+                      <td data-label="">
                         <Thumb src={p.images[0]} />
                       </td>
-                      <td className="mono">{p.sku}</td>
-                      <td>
+                      <td data-label={t('sku')} className="mono">{p.sku}</td>
+                      <td data-label={t('name')}>
                         <Link to={`/products/${p.id}`}>{pick(p.name, p.name_en)}</Link>
                       </td>
-                      <td>{catName(p.category_id)}</td>
-                      <td className="num">
+                      <td data-label={t('category')}>{catName(p.category_id)}</td>
+                      <td data-label={t('retail')} className="num">
                         <input className="cell-input" inputMode="decimal" aria-label={`${p.sku} ${t('retail')}`} value={val(p, d, 'retail')} onChange={(e) => setDraft(p.id, { retail: e.target.value })} />
                       </td>
-                      <td className="num">
+                      <td data-label={t('wholesale')} className="num">
                         <input
                           className={`cell-input ${w > r ? 'warn-input' : ''}`}
                           title={w > r ? t('wholesaleAboveRetail') : undefined}
@@ -210,10 +210,10 @@ export function Products() {
                           onChange={(e) => setDraft(p.id, { wholesale: e.target.value })}
                         />
                       </td>
-                      <td className="num">
+                      <td data-label={t('stock')} className="num">
                         <input className={`cell-input ${parseNumber(val(p, d, 'stock')) <= 0 ? 'warn-input' : ''}`} inputMode="numeric" aria-label={`${p.sku} ${t('stock')}`} value={val(p, d, 'stock')} onChange={(e) => setDraft(p.id, { stock: e.target.value.replace(/[^\d]/g, '') })} />
                       </td>
-                      <td>
+                      <td data-label={t('active')}>
                         <label className="switch">
                           <input type="checkbox" checked={d?.active ?? p.active} onChange={(e) => setDraft(p.id, { active: e.target.checked })} aria-label={`${p.sku} ${t('active')}`} />
                           {(d?.active ?? p.active) ? <Badge tone="ok">{t('active')}</Badge> : <Badge>{t('inactive')}</Badge>}

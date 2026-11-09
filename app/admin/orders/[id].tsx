@@ -3,10 +3,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, Text } from 'react-native';
 import { AdminOnly } from '../../../components/AdminOnly';
 import { ORDER_SELECT, OrderView } from '../../../components/OrderView';
-import { Button, Card, Chip, Empty, Field, H2, Loading, Muted, Row, Screen } from '../../../components/ui';
-import { showMessage } from '../../../lib/dialog';
+import { Banner, Button, Card, Chip, Empty, Field, H2, Loading, Muted, Row, Screen } from '../../../components/ui';
+import { confirmAction, showMessage } from '../../../lib/dialog';
 import { errorText, TKey, useI18n } from '../../../lib/i18n';
 import { useNotifications } from '../../../lib/notifications';
+import { archiveOrder, archiveSupported, canArchive, canCancel, cancelOrder, restoreOrder } from '../../../lib/orderActions';
 import { dispatchNotifications, supabase } from '../../../lib/supabase';
 import { colors } from '../../../lib/theme';
 import { ORDER_STATUSES, Order, OrderStatus } from '../../../lib/types';
@@ -19,8 +20,10 @@ function AdminOrder() {
   const [status, setStatus] = useState<OrderStatus>('new');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [archiveDb, setArchiveDb] = useState(false);
 
   const load = useCallback(async () => {
+    setArchiveDb(await archiveSupported());
     const { data } = await supabase.from('orders').select(ORDER_SELECT).eq('id', String(id)).maybeSingle();
     const o = (data as Order) ?? null;
     setOrder(o);
@@ -42,6 +45,27 @@ function AdminOrder() {
     dispatchNotifications();
     showMessage(t('saved'));
     load();
+  }
+
+  const archived = !!order.archived_at;
+  async function act(kind: 'cancel' | 'archive' | 'restore') {
+    const n = order!.order_number;
+    const titles = { cancel: 'cancelOrderAdmin', archive: 'archiveOrder', restore: 'restoreOrder' } as const;
+    const texts = { cancel: 'adminCancelConfirm', archive: 'archiveConfirm', restore: 'restoreConfirm' } as const;
+    const done = { cancel: 'orderCancelledAdmin', archive: 'orderArchived', restore: 'orderRestored' } as const;
+    if (!(await confirmAction(t(titles[kind]), t(texts[kind], { n }), t(titles[kind]), t('cancel')))) return;
+    setBusy(true);
+    try {
+      if (kind === 'cancel') await cancelOrder(order!.id, note !== order!.admin_note ? note : null, archiveDb);
+      if (kind === 'archive') await archiveOrder(order!.id);
+      if (kind === 'restore') await restoreOrder(order!.id);
+      showMessage(t(done[kind], { n }));
+      await load();
+    } catch (e) {
+      showMessage(t('error'), errorText(t, e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   const c = order.profiles;
@@ -68,6 +92,23 @@ function AdminOrder() {
             )}
           </Row>
         </Card>
+        {archived && <Banner tone="warning" text={t('archivedBanner')} />}
+        {(canCancel(order.status, order.archived_at) || (archiveDb && (canArchive(order.status, order.archived_at) || archived))) && (
+          <Card>
+            <Row>
+              {canCancel(order.status, order.archived_at) && (
+                <Button variant="danger" icon="close-circle-outline" title={t('cancelOrderAdmin')} onPress={() => act('cancel')} disabled={busy} testID="admin-cancel" />
+              )}
+              {archiveDb && canArchive(order.status, order.archived_at) && (
+                <Button variant="secondary" icon="archive-outline" title={t('archiveOrder')} onPress={() => act('archive')} disabled={busy} testID="admin-archive" />
+              )}
+              {archiveDb && archived && (
+                <Button icon="arrow-undo-outline" title={t('restoreOrder')} onPress={() => act('restore')} disabled={busy} testID="admin-restore" />
+              )}
+            </Row>
+          </Card>
+        )}
+        {!archived && (
         <Card>
           <H2>{t('changeStatus')}</H2>
           <Row>
@@ -78,6 +119,7 @@ function AdminOrder() {
           <Field label={t('adminNote')} value={note} onChangeText={setNote} multiline autoCapitalize="sentences" />
           <Button title={t('save')} icon="save-outline" onPress={save} loading={busy} testID="order-save" />
         </Card>
+        )}
       </OrderView>
     </Screen>
   );

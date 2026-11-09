@@ -3,10 +3,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { AdminOnly } from '../../../components/AdminOnly';
 import { StatusBadge } from '../../../components/StatusBadge';
-import { Card, Chip, Empty, ListItem, Loading, Screen } from '../../../components/ui';
+import { Button, Card, Chip, Empty, ListItem, Loading, Screen } from '../../../components/ui';
 import { dateTime, money } from '../../../lib/format';
 import { TKey, useI18n } from '../../../lib/i18n';
 import { useNotifications } from '../../../lib/notifications';
+import { archiveSupported } from '../../../lib/orderActions';
 import { supabase } from '../../../lib/supabase';
 import { ORDER_STATUSES, Order, OrderStatus } from '../../../lib/types';
 
@@ -17,14 +18,18 @@ function OrdersAdmin() {
   const [status, setStatus] = useState<OrderStatus | null>((params.status as OrderStatus) ?? null);
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [archiveDb, setArchiveDb] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    const supported = await archiveSupported();
+    setArchiveDb(supported);
     let q = supabase
       .from('orders')
       .select('*, profiles(email,full_name,business_name,phone)')
       .order('created_at', { ascending: false })
       .limit(300);
+    if (supported) q = q.is('archived_at', null); // archived orders have their own screen
     if (status) q = q.eq('status', status);
     const { data } = await q;
     setOrders((data ?? []) as Order[]);
@@ -37,6 +42,9 @@ function OrdersAdmin() {
   return (
     <Screen refreshing={loading} onRefresh={load}>
       <Stack.Screen options={{ title: t('manageOrders') }} />
+      {archiveDb && (
+        <Button variant="secondary" small icon="archive-outline" title={t('archivedOrders')} onPress={() => router.push('/admin/orders/archived')} testID="open-archive" />
+      )}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
         <Chip label={t('all')} active={!status} onPress={() => setStatus(null)} />
         {ORDER_STATUSES.map((s) => (

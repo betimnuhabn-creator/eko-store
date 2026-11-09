@@ -3,13 +3,13 @@
     "name": "EKO Store",
     "slug": "eko-store",
     "scheme": "ekostore",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.ekoshpk.store",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
@@ -47,8 +47,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "EKO Store përdor fotot për të shtuar produkte. / EKO Store uses photos to add products.",
-          "cameraPermission": "EKO Store përdor kamerën për të fotografuar produkte. / EKO Store uses the camera to photograph products.",
+          "photosPermission": "EKO Store p\u00ebrdor fotot p\u00ebr t\u00eb shtuar produkte. / EKO Store uses photos to add products.",
+          "cameraPermission": "EKO Store p\u00ebrdor kamer\u00ebn p\u00ebr t\u00eb fotografuar produkte. / EKO Store uses the camera to photograph products.",
           "microphonePermission": false
         }
       ],

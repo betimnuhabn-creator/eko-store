@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Empty, Pager, Spinner, StatusBadge, useConfirm, usePaging, useToast } from '../components/ui';
 import { dateTime, money, normalize } from '../lib/format';
 import { errorText, useI18n } from '../lib/i18n';
-import { restoreOrder } from '../lib/orders';
+import { archiveSupported, restoreOrder } from '../lib/orders';
 import { supabase } from '../lib/supabase';
 import type { Order } from '../lib/types';
 
@@ -17,6 +17,10 @@ export function ArchivedOrders() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!(await archiveSupported())) {
+      setOrders([]); // database not migrated yet: nothing can be archived
+      return;
+    }
     const { data, error: e } = await supabase
       .from('orders')
       .select('*, profiles(email,full_name,business_name,phone)')
@@ -69,7 +73,7 @@ export function ArchivedOrders() {
           <Empty text={t('noArchived')} />
         ) : (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table responsive">
               <thead>
                 <tr>
                   <th>{t('order')}</th>
@@ -85,18 +89,18 @@ export function ArchivedOrders() {
               <tbody>
                 {paging.slice.map((o) => (
                   <tr key={o.id} data-testid={`archived-${o.order_number}`}>
-                    <td>
+                    <td data-label={t('order')}>
                       <Link to={`/orders/${o.id}`}>#{o.order_number}</Link>
                     </td>
-                    <td>{dateTime(o.created_at)}</td>
-                    <td>{o.profiles?.business_name || o.delivery_name}</td>
-                    <td>{o.delivery_city}</td>
-                    <td className="num">{money(o.total)}</td>
-                    <td>
+                    <td data-label={t('date')}>{dateTime(o.created_at)}</td>
+                    <td data-label={t('customer')}>{o.profiles?.business_name || o.delivery_name}</td>
+                    <td data-label={t('city')}>{o.delivery_city}</td>
+                    <td data-label={t('total')} className="num">{money(o.total)}</td>
+                    <td data-label={t('status')}>
                       <StatusBadge status={o.status} />
                     </td>
-                    <td>{o.archived_at ? dateTime(o.archived_at) : ''}</td>
-                    <td className="num">
+                    <td data-label={t('archivedOn')}>{o.archived_at ? dateTime(o.archived_at) : ''}</td>
+                    <td data-label="" className="num">
                       <button className="btn btn-sm" disabled={busy === o.id} onClick={() => restore(o)} data-testid={`restore-${o.order_number}`}>
                         ↩ {t('restoreOrder')}
                       </button>

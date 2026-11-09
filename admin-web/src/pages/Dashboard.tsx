@@ -4,6 +4,7 @@ import { Empty, StatusBadge } from '../components/ui';
 import { useCatalog, useNotifications } from '../lib/data';
 import { dateTime, money } from '../lib/format';
 import { useI18n, type TKey } from '../lib/i18n';
+import { archiveSupported } from '../lib/orders';
 import { supabase } from '../lib/supabase';
 import type { Order } from '../lib/types';
 
@@ -18,10 +19,10 @@ export function Dashboard() {
   const [perm, setPerm] = useState(() => ('Notification' in window ? Notification.permission : 'denied'));
 
   const load = useCallback(async () => {
-    const [s, o] = await Promise.all([
-      supabase.rpc('admin_stats'),
-      supabase.from('orders').select('*, profiles(business_name,full_name)').is('archived_at', null).order('created_at', { ascending: false }).limit(10),
-    ]);
+    const supported = await archiveSupported();
+    let latestQ = supabase.from('orders').select('*, profiles(business_name,full_name)').order('created_at', { ascending: false }).limit(10);
+    if (supported) latestQ = latestQ.is('archived_at', null);
+    const [s, o] = await Promise.all([supabase.rpc('admin_stats'), latestQ]);
     if (s.data) setStats(s.data as Stats);
     setLatest((o.data ?? []) as Order[]);
   }, []);
@@ -65,7 +66,7 @@ export function Dashboard() {
         {latest.length === 0 ? (
           <Empty text={t('noOrders')} />
         ) : (
-          <table className="table">
+          <table className="table responsive">
             <thead>
               <tr>
                 <th>{t('order')}</th>
@@ -79,14 +80,14 @@ export function Dashboard() {
             <tbody>
               {latest.map((o) => (
                 <tr key={o.id}>
-                  <td>
+                  <td data-label={t('order')}>
                     <Link to={`/orders/${o.id}`}>#{o.order_number}</Link>
                   </td>
-                  <td>{dateTime(o.created_at)}</td>
-                  <td>{o.profiles?.business_name || o.delivery_name}</td>
-                  <td>{o.delivery_city}</td>
-                  <td className="num">{money(o.total)}</td>
-                  <td>
+                  <td data-label={t('date')}>{dateTime(o.created_at)}</td>
+                  <td data-label={t('customer')}>{o.profiles?.business_name || o.delivery_name}</td>
+                  <td data-label={t('city')}>{o.delivery_city}</td>
+                  <td data-label={t('total')} className="num">{money(o.total)}</td>
+                  <td data-label={t('status')}>
                     <StatusBadge status={o.status} />
                   </td>
                 </tr>

@@ -80,6 +80,8 @@ export type Order = {
   admin_note: string;
   created_at: string;
   updated_at: string;
+  /** set when an admin archived the (cancelled) order; absent before the archive migration */
+  archived_at?: string | null;
   order_items?: OrderItem[];
   profiles?: Pick<Profile, 'email' | 'full_name' | 'business_name' | 'phone'> | null;
 };

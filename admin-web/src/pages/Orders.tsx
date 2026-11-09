@@ -4,7 +4,7 @@ import { Empty, Pager, Spinner, StatusBadge, useConfirm, usePaging, useToast } f
 import { useNotifications } from '../lib/data';
 import { dateTime, downloadCsv, money, normalize } from '../lib/format';
 import { errorText, useI18n, type TKey } from '../lib/i18n';
-import { archiveOrder, canArchive, canCancel, cancelOrder } from '../lib/orders';
+import { archiveOrder, archiveSupported, canArchive, canCancel, cancelOrder } from '../lib/orders';
 import { supabase } from '../lib/supabase';
 import { ORDER_STATUSES, type Order } from '../lib/types';
 
@@ -20,16 +20,19 @@ export function Orders() {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [archiveDb, setArchiveDb] = useState(false);
   const confirm = useConfirm();
   const toast = useToast();
 
   const load = useCallback(async () => {
+    const supported = await archiveSupported();
+    setArchiveDb(supported);
     let query = supabase
       .from('orders')
       .select('*, profiles(email,full_name,business_name,phone)')
-      .is('archived_at', null) // archived orders live in the Archive section
       .order('created_at', { ascending: false })
       .limit(1000);
+    if (supported) query = query.is('archived_at', null); // archived orders live in the Archive section
     if (status === 'open') query = query.in('status', ['new', 'confirmed', 'preparing', 'shipped', 'accepted']);
     else if (status) query = query.eq('status', status);
     if (customer) query = query.eq('customer_id', customer);
@@ -65,7 +68,7 @@ export function Orders() {
     if (!ok) return;
     setBusy(o.id);
     try {
-      if (kind === 'cancel') await cancelOrder(o.id);
+      if (kind === 'cancel') await cancelOrder(o.id, undefined, archiveDb);
       else await archiveOrder(o.id);
       toast(t(kind === 'cancel' ? 'orderCancelled' : 'orderArchived', { n }));
       await load();
@@ -139,7 +142,7 @@ export function Orders() {
           <Empty text={t('noOrders')} />
         ) : (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table responsive">
               <thead>
                 <tr>
                   <th>{t('order')}</th>
@@ -157,26 +160,26 @@ export function Orders() {
               <tbody>
                 {paging.slice.map((o) => (
                   <tr key={o.id} data-testid={`order-${o.order_number}`}>
-                    <td>
+                    <td data-label={t('order')}>
                       <Link to={`/orders/${o.id}`}>#{o.order_number}</Link>
                     </td>
-                    <td>{dateTime(o.created_at)}</td>
-                    <td>{o.profiles?.business_name || o.delivery_name}</td>
-                    <td>{o.delivery_phone}</td>
-                    <td>{o.delivery_city}</td>
-                    <td>{t(o.price_tier === 'wholesale' ? 'wholesale' : 'retail')}</td>
-                    <td className="num">{o.item_count}</td>
-                    <td className="num">{money(o.total)}</td>
-                    <td>
+                    <td data-label={t('date')}>{dateTime(o.created_at)}</td>
+                    <td data-label={t('customer')}>{o.profiles?.business_name || o.delivery_name}</td>
+                    <td data-label={t('phone')}>{o.delivery_phone}</td>
+                    <td data-label={t('city')}>{o.delivery_city}</td>
+                    <td data-label={t('tier')}>{t(o.price_tier === 'wholesale' ? 'wholesale' : 'retail')}</td>
+                    <td data-label={t('items')} className="num">{o.item_count}</td>
+                    <td data-label={t('total')} className="num">{money(o.total)}</td>
+                    <td data-label={t('status')}>
                       <StatusBadge status={o.status} />
                     </td>
-                    <td className="num nowrap">
+                    <td data-label="" className="num nowrap">
                       {canCancel(o.status, o.archived_at) && (
                         <button className="btn btn-sm btn-danger-outline" disabled={busy === o.id} onClick={() => act(o, 'cancel')} data-testid={`cancel-${o.order_number}`}>
                           {t('cancelOrder')}
                         </button>
                       )}
-                      {canArchive(o.status, o.archived_at) && (
+                      {archiveDb && canArchive(o.status, o.archived_at) && (
                         <button className="btn btn-sm" disabled={busy === o.id} onClick={() => act(o, 'archive')} data-testid={`archive-${o.order_number}`}>
                           🗄 {t('archiveOrder')}
                         </button>

@@ -66,6 +66,7 @@ function Dashboard() {
       </View>
       <Card style={{ padding: 0, overflow: 'hidden', gap: 0 }}>
         <ListItem icon="receipt-outline" title={t('manageOrders')} onPress={() => router.push('/admin/orders')} />
+        <ListItem icon="archive-outline" title={t('archivedOrders')} onPress={() => router.push('/admin/orders/archived')} />
         <ListItem icon="cube-outline" title={t('manageProducts')} onPress={() => router.push('/admin/products')} />
         <ListItem icon="pricetags-outline" title={t('manageCategories')} onPress={() => router.push('/admin/categories')} />
         <ListItem icon="people-outline" title={t('manageCustomers')} onPress={() => router.push('/admin/customers')} />

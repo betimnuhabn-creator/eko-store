@@ -5,7 +5,7 @@ import { Empty, Spinner, StatusBadge, useConfirm, useToast } from '../components
 import { useNotifications } from '../lib/data';
 import { dateTime, money } from '../lib/format';
 import { errorText, useI18n, type TKey } from '../lib/i18n';
-import { archiveOrder, canArchive, canCancel, cancelOrder, restoreOrder } from '../lib/orders';
+import { archiveOrder, archiveSupported, canArchive, canCancel, cancelOrder, restoreOrder } from '../lib/orders';
 import { dispatchNotifications, supabase } from '../lib/supabase';
 import { ORDER_STATUSES, type Order, type OrderStatus } from '../lib/types';
 
@@ -21,8 +21,10 @@ export function OrderDetail() {
   const [status, setStatus] = useState<OrderStatus>('new');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [archiveDb, setArchiveDb] = useState(false);
 
   const load = useCallback(async () => {
+    setArchiveDb(await archiveSupported());
     const { data } = await supabase.from('orders').select(SELECT).eq('id', id).maybeSingle();
     const o = (data as Order) ?? null;
     setOrder(o);
@@ -58,7 +60,7 @@ export function OrderDetail() {
     if (!(await confirm(t(text[kind], { n }), { danger: kind === 'cancel', ok: t(okLabel[kind]) }))) return;
     setBusy(true);
     try {
-      if (kind === 'cancel') await cancelOrder(order!.id, note !== order!.admin_note ? note : undefined);
+      if (kind === 'cancel') await cancelOrder(order!.id, note !== order!.admin_note ? note : undefined, archiveDb);
       if (kind === 'archive') await archiveOrder(order!.id);
       if (kind === 'restore') await restoreOrder(order!.id);
       const done = { cancel: 'orderCancelled', archive: 'orderArchived', restore: 'orderRestored' } as const;
@@ -86,7 +88,7 @@ export function OrderDetail() {
               {t('cancelOrder')}
             </button>
           )}
-          {canArchive(order.status, order.archived_at) && (
+          {archiveDb && canArchive(order.status, order.archived_at) && (
             <button className="btn" disabled={busy} onClick={() => act('archive')} data-testid="detail-archive">
               🗄 {t('archiveOrder')}
             </button>
@@ -124,7 +126,7 @@ export function OrderDetail() {
           <p className="muted">
             {dateTime(order.created_at)} · {t(order.price_tier === 'wholesale' ? 'wholesale' : 'retail')} · {t(`pay_${order.payment_method}` as TKey)}
           </p>
-          <table className="table">
+          <table className="table responsive">
             <thead>
               <tr>
                 <th>{t('sku')}</th>
@@ -137,19 +139,19 @@ export function OrderDetail() {
             <tbody>
               {(order.order_items ?? []).map((i) => (
                 <tr key={i.id}>
-                  <td className="mono">{i.product_id ? <Link to={`/products/${i.product_id}`}>{i.sku}</Link> : i.sku}</td>
-                  <td>{i.product_name}</td>
-                  <td className="num">
+                  <td data-label={t('sku')} className="mono">{i.product_id ? <Link to={`/products/${i.product_id}`}>{i.sku}</Link> : i.sku}</td>
+                  <td data-label={t('name')}>{i.product_name}</td>
+                  <td data-label={t('quantity')} className="num">
                     {i.quantity} {i.unit}
                   </td>
-                  <td className="num">{money(i.unit_price)}</td>
-                  <td className="num">{money(i.quantity * i.unit_price)}</td>
+                  <td data-label={t('unitPrice')} className="num">{money(i.unit_price)}</td>
+                  <td data-label={t('lineTotal')} className="num">{money(i.quantity * i.unit_price)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={4} className="num">
+                <td colSpan={4} className="num" data-label="">
                   <strong>{t('total')}</strong>
                 </td>
                 <td className="num">

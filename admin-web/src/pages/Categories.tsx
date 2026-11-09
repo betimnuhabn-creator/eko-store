@@ -49,7 +49,7 @@ export function Categories() {
         {categories.length === 0 ? (
           <Empty text={t('none')} />
         ) : (
-          <table className="table">
+          <table className="table responsive">
             <thead>
               <tr>
                 <th>{t('sortOrder')}</th>
@@ -63,12 +63,12 @@ export function Categories() {
             <tbody>
               {categories.map((c) => (
                 <tr key={c.id}>
-                  <td>{c.sort_order}</td>
-                  <td>{c.name_sq}</td>
-                  <td>{c.name_en || '—'}</td>
-                  <td className="num">{count(c.id)}</td>
-                  <td>{c.active ? <Badge tone="ok">{t('active')}</Badge> : <Badge>{t('inactive')}</Badge>}</td>
-                  <td className="num">
+                  <td data-label={t('sortOrder')}>{c.sort_order}</td>
+                  <td data-label={t('nameSq')}>{c.name_sq}</td>
+                  <td data-label={t('nameEn')}>{c.name_en || '—'}</td>
+                  <td data-label={t('productsInCategory')} className="num">{count(c.id)}</td>
+                  <td data-label={t('status')}>{c.active ? <Badge tone="ok">{t('active')}</Badge> : <Badge>{t('inactive')}</Badge>}</td>
+                  <td data-label="" className="num">
                     <button className="btn btn-sm" onClick={() => setDraft({ id: c.id, name_sq: c.name_sq, name_en: c.name_en, sort_order: String(c.sort_order), active: c.active })}>
                       {t('edit')}
                     </button>{' '}

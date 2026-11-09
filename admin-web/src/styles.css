@@ -204,3 +204,18 @@ li.unread .bell-item span { font-weight: 700; }
   .grid-2.wide-left { grid-template-columns: 1fr; }
   body { background: #fff; }
 }
+
+/* ---------- phones: tables become labelled cards */
+@media (max-width: 700px) {
+  .table.responsive thead { display: none; }
+  .table.responsive, .table.responsive tbody, .table.responsive tfoot { display: block; }
+  .table.responsive tr { display: block; padding: 8px 0; border-bottom: 1px solid #e3e9ef; }
+  .table.responsive td { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 0; padding: 4px 4px; text-align: right; }
+  .table.responsive td::before { content: attr(data-label); color: var(--muted); font-weight: 600; font-size: 12px; text-align: left; }
+  .table.responsive td[data-label='']::before { content: none; }
+  .table.responsive td.num { text-align: right; }
+  .table.responsive .cell-input { width: 120px; }
+  .table-wrap { overflow-x: visible; }
+  .filters .search { min-width: 0; flex: 1 1 100%; }
+  .page-head h1 { font-size: 19px; }
+}

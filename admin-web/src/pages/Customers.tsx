@@ -109,7 +109,7 @@ export function Customers() {
           <Empty text={t('none')} />
         ) : (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table responsive">
               <thead>
                 <tr>
                   <th>{t('customer')}</th>
@@ -125,26 +125,26 @@ export function Customers() {
               <tbody>
                 {paging.slice.map((p) => (
                   <tr key={p.id} data-testid={`customer-${p.email}`}>
-                    <td>
+                    <td data-label={t('customer')}>
                       <strong>{p.business_name || p.full_name || '—'}</strong>
                       {p.business_name && <div className="muted small">{p.full_name}</div>}
                       {p.business_number && <div className="muted small">{t('businessNumber')}: {p.business_number}</div>}
                     </td>
-                    <td>
+                    <td data-label={t('email')}>
                       <a href={`mailto:${p.email}`}>{p.email}</a>
                     </td>
-                    <td>{p.phone}</td>
-                    <td>{p.city}</td>
-                    <td>
+                    <td data-label={t('phone')}>{p.phone}</td>
+                    <td data-label={t('city')}>{p.city}</td>
+                    <td data-label={t('type')}>
                       {isWholesale(p) ? <Badge tone="ok">{t('role_wholesale')}</Badge> : <Badge>{t('role_retail')}</Badge>}{' '}
                       {p.wholesale_status === 'pending' && <Badge tone="warn">{t('ws_pending')}</Badge>}
                       {p.wholesale_status === 'rejected' && <Badge tone="bad">{t('ws_rejected')}</Badge>}
                     </td>
-                    <td>{dateOnly(p.created_at)}</td>
-                    <td className="num">
+                    <td data-label={t('registered')}>{dateOnly(p.created_at)}</td>
+                    <td data-label={t('orders')} className="num">
                       {stats[p.id] ? <Link to={`/orders?customer=${p.id}`}>{stats[p.id].count} · {money(stats[p.id].total)}</Link> : '0'}
                     </td>
-                    <td className="num nowrap">
+                    <td data-label="" className="num nowrap">
                       {p.wholesale_status === 'pending' && (
                         <>
                           <button className="btn btn-sm btn-primary" disabled={busy === p.id} onClick={() => review(p, true, 'approveConfirm')} data-testid={`approve-${p.email}`}>
