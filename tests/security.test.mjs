@@ -9,20 +9,27 @@ import {
 
 const EKO_TABLES = ['profiles', 'categories', 'products', 'orders', 'order_items', 'notifications', 'push_tokens'];
 const EKO_DEFINER_FUNCTIONS = [
-  'admin_archive_order', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product', 'admin_restore_order',
-  'admin_review_wholesale', 'admin_save_category',
+  'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
+  'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
+  'admin_review_wholesale', 'admin_save_category', 'admin_save_offer', 'admin_set_offer_active',
+  'admin_set_promo_settings', 'admin_set_promo_tester',
   'admin_save_product', 'admin_set_order_status', 'admin_stats', 'assert_admin', 'cancel_my_order',
   'claim_notifications', 'delete_my_account', 'finish_notifications', 'forget_push_tokens', 'is_admin',
-  'list_products', 'mark_notifications_read', 'new_profile', 'notify_admins', 'notify_user', 'place_order',
-  'price_tier', 'register_push_token', 'request_wholesale', 'unregister_push_token', 'update_my_profile',
-];
+  'list_offers', 'list_products', 'mark_notifications_read', 'new_profile', 'notify_admins', 'notify_user', 'place_order',
+  'price_tier', 'process_offer_activations', 'products_promo_trigger', 'promo_fanout', 'promo_queue_new_product',
+  'promo_queue_price', 'register_push_token', 'request_wholesale', 'set_my_promo_preferences', 'unregister_push_token',
+  'update_my_profile',
+].concat(['best_offer']).sort();
 const AUTHENTICATED_EXEC = [
-  'admin_archive_order', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product', 'admin_restore_order',
-  'admin_review_wholesale', 'admin_save_category',
+  'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
+  'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
+  'admin_review_wholesale', 'admin_save_category', 'admin_save_offer', 'admin_set_offer_active',
+  'admin_set_promo_settings', 'admin_set_promo_tester',
   'admin_save_product', 'admin_set_order_status', 'admin_stats', 'cancel_my_order', 'delete_my_account',
   'is_admin', 'list_products', 'mark_notifications_read', 'place_order', 'register_push_token',
   'request_wholesale', 'unregister_push_token', 'update_my_profile',
-];
+  'list_offers', 'set_my_promo_preferences',
+].sort();
 
 describe('database catalog audit', () => {
   test('RLS is enabled on every EKO table', () => {
@@ -71,11 +78,11 @@ describe('database catalog audit', () => {
     assert.deepEqual(rows.split('\n'), EKO_DEFINER_FUNCTIONS.map((f) => `${f}:search_path=""`));
   });
 
-  test('anon can execute only list_products()', () => {
+  test('anon can execute only list_offers() and list_products()', () => {
     const rows = sql(`select string_agg(p.proname, ',' order by p.proname) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname = any(array[${EKO_DEFINER_FUNCTIONS.map((f) => `'${f}'`).join(',')}])
         and has_function_privilege('anon', p.oid, 'execute')`);
-    assert.equal(rows, 'list_products');
+    assert.equal(rows, 'list_offers,list_products');
   });
 
   test('authenticated can execute exactly the app functions', () => {
@@ -110,7 +117,9 @@ describe('database catalog audit', () => {
 
   test('every admin function checks is_admin() first', () => {
     for (const f of ['admin_archive_order', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
-      'admin_restore_order', 'admin_review_wholesale', 'admin_save_category', 'admin_save_product', 'admin_set_order_status', 'admin_stats']) {
+      'admin_restore_order', 'admin_review_wholesale', 'admin_save_category', 'admin_save_product', 'admin_set_order_status', 'admin_stats',
+      'admin_cancel_offer', 'admin_get_promo_settings', 'admin_list_offers', 'admin_save_offer', 'admin_set_offer_active',
+      'admin_set_promo_settings', 'admin_set_promo_tester']) {
       const src = sql(`select prosrc from pg_proc where proname='${f}'`);
       const first = src.split('\n').map((l) => l.trim()).find((l) => l && l !== 'begin' && !l.startsWith('declare'));
       assert.match(src, /perform public\.assert_admin\(\);/, f);

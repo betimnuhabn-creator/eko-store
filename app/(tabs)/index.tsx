@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { PriceTag } from '../../components/PriceTag';
 import { ProductImage } from '../../components/ProductImage';
@@ -7,6 +8,7 @@ import { Banner, Button, Chip, Empty, Field, Loading, s as ui } from '../../comp
 import { useAuth } from '../../lib/auth';
 import { useCart } from '../../lib/cart';
 import { useCatalog } from '../../lib/catalog';
+import { fetchOffers } from '../../lib/offers';
 import { useI18n } from '../../lib/i18n';
 import { colors, maxWidth } from '../../lib/theme';
 import { isWholesale, type Product } from '../../lib/types';
@@ -21,6 +23,13 @@ export default function CatalogScreen() {
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string | null>(null);
+  const [offerCount, setOfferCount] = useState(0);
+  // Promotional banner: number of products in live offers.
+  useFocusEffect(
+    useCallback(() => {
+      fetchOffers().then((o) => setOfferCount(new Set(o.flatMap((x) => x.items.map((i) => i.product_id))).size));
+    }, []),
+  );
 
   const columns = width < 600 ? 2 : width < 900 ? 3 : 4;
   const cardWidth = (Math.min(width, maxWidth) - 16 * 2 - 12 * (columns - 1)) / columns;
@@ -39,6 +48,17 @@ export default function CatalogScreen() {
 
   const header = (
     <View style={{ gap: 12, marginBottom: 12 }}>
+      {offerCount > 0 && (
+        <Pressable
+          onPress={() => router.push('/offers')}
+          testID="offers-banner"
+          style={{ backgroundColor: colors.danger, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+        >
+          <Text style={{ fontSize: 22 }}>🏷️</Text>
+          <Text style={{ color: '#fff', fontWeight: '800', flex: 1 }}>{offerCount === 1 ? t('offersBannerOne') : t('offersBanner', { n: offerCount })}</Text>
+          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 18 }}>›</Text>
+        </Pressable>
+      )}
       {!session && <Banner text={t('guestAccount')} />}
       {isWholesale(profile) && <Banner tone="success" text={t('pricesWholesale')} />}
       {profile?.wholesale_status === 'pending' && <Banner tone="warning" text={t('pricesPendingWholesale')} />}

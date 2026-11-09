@@ -177,3 +177,62 @@ describe('notification delivery', () => {
     assert.equal(mine.length, 1);
   });
 });
+
+describe('promotional push notifications (offers migration)', () => {
+  test('new product, price drop and price increase: texts, channel, deep link, no admin e-mail', async () => {
+    const promoUser = await signUp('nt-promo');
+    ok(await promoUser.c.rpc('set_my_promo_preferences', { p_new_products: true, p_offers: true, p_price_changes: true }));
+    ok(await promoUser.c.rpc('register_push_token', { p_token: 'ExponentPushToken[promo-ok]', p_platform: 'android' }));
+    ok(await admin.c.rpc('admin_set_promo_settings', { p: { enabled: true, test_only: false, debounce_minutes: 0, daily_cap: 50 } }));
+    const save = (p) => admin.c.rpc('admin_save_product', { p: { sku: `NT-PROMO-${Date.now()}`, name: 'Bojler 80L', name_en: 'Boiler 80L', retail_price: 100, wholesale_price: 70, stock: 1, ...p } });
+    const pid = ok(await save({}));
+    await dispatch();
+    let m = mock.pushes.find((x) => x.to === 'ExponentPushToken[promo-ok]' && x.data.url === `/product/${pid}`);
+    assert.equal(m.title, 'EKO Store – Produkt i ri!');
+    assert.equal(m.body, 'Shikoni produktin tonë më të ri: Bojler 80L.');
+    assert.equal(m.channelId, 'promotions');
+    assert.equal(m.data.url, `/product/${pid}`);
+    assert.equal(m.data.category, 'promo');
+    const sku = ok(await service.from('products').select('sku').eq('id', pid).single()).sku;
+    mock.pushes = [];
+    ok(await admin.c.rpc('admin_save_product', { p: { id: pid, sku, name: 'Bojler 80L', name_en: 'Boiler 80L', retail_price: 85, wholesale_price: 70, stock: 1 } }));
+    await dispatch();
+    m = mock.pushes.find((x) => x.to === 'ExponentPushToken[promo-ok]' && x.data.url === `/product/${pid}`);
+    assert.equal(m.title, 'EKO Store – Ulje çmimi!');
+    assert.equal(m.body, 'Produkti Bojler 80L nga 100€ tani 85€.');
+    mock.pushes = [];
+    ok(await admin.c.rpc('admin_save_product', { p: { id: pid, sku, name: 'Bojler 80L', name_en: 'Boiler 80L', retail_price: 95, wholesale_price: 70, stock: 1 } }));
+    await dispatch();
+    m = mock.pushes.find((x) => x.to === 'ExponentPushToken[promo-ok]' && x.data.url === `/product/${pid}`);
+    assert.equal(m.title, 'EKO Store – Ndryshim çmimi!');
+    assert.equal(m.body, 'Produkti Bojler 80L nga 85€ tani 95€.');
+    assert.equal(mock.emails.filter((e) => /Produkt|çmim/i.test(e.subject)).length, 0, 'no admin e-mail for promotions');
+    // order notifications keep the default channel
+    const p = await productBySku('HS-001');
+    mock.pushes = [];
+    ok(await customer.c.rpc('place_order', { p_lines: [{ product_id: p.id, quantity: 1 }], p_delivery: delivery }));
+    await dispatch();
+    const order = mock.pushes.find((x) => x.to === 'ExponentPushToken[admin-ok]');
+    assert.equal(order.channelId, 'default');
+    assert.equal(order.data.category, 'order');
+    ok(await admin.c.rpc('admin_set_promo_settings', { p: { enabled: false } }));
+  });
+
+  test('offer becoming active: push opens the offer', async () => {
+    const promoUser = await signUp('nt-promo2');
+    ok(await promoUser.c.rpc('set_my_promo_preferences', { p_new_products: false, p_offers: true, p_price_changes: false }));
+    ok(await promoUser.c.rpc('register_push_token', { p_token: 'ExponentPushToken[promo-offer]', p_platform: 'android' }));
+    ok(await admin.c.rpc('admin_set_promo_settings', { p: { enabled: true, test_only: false, debounce_minutes: 0 } }));
+    const p = await productBySku('HS-001');
+    const oid = ok(await admin.c.rpc('admin_save_offer', { p: {
+      title_sq: 'Javët e banjës', title_en: 'Bathroom weeks',
+      starts_at: new Date(Date.now() - 60000).toISOString(), ends_at: new Date(Date.now() + 3600000).toISOString(),
+      items: [{ product_id: p.id, offer_price: 29.9 }] } }));
+    await dispatch();
+    const m = mock.pushes.find((x) => x.to === 'ExponentPushToken[promo-offer]');
+    assert.equal(m.title, 'EKO Store – Ofertë speciale!');
+    assert.equal(m.body, 'Përfitoni nga çmimet promocionale: Javët e banjës.');
+    assert.equal(m.data.url, `/offers/${oid}`);
+    ok(await admin.c.rpc('admin_set_promo_settings', { p: { enabled: false } }));
+  });
+});

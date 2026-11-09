@@ -11,6 +11,8 @@ const NAV: { to: string; key: TKey; icon: string }[] = [
   { to: '/orders', key: 'orders', icon: '🧾' },
   { to: '/archived-orders', key: 'archivedOrders', icon: '🗄' },
   { to: '/products', key: 'products', icon: '📦' },
+  { to: '/offers', key: 'manageOffers', icon: '🏷️' },
+  { to: '/promo', key: 'promoSettings', icon: '📣' },
   { to: '/categories', key: 'categories', icon: '🏷' },
   { to: '/customers', key: 'customers', icon: '👥' },
 ];

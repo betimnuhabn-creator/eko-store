@@ -68,6 +68,8 @@ function Dashboard() {
         <ListItem icon="receipt-outline" title={t('manageOrders')} onPress={() => router.push('/admin/orders')} />
         <ListItem icon="archive-outline" title={t('archivedOrders')} onPress={() => router.push('/admin/orders/archived')} />
         <ListItem icon="cube-outline" title={t('manageProducts')} onPress={() => router.push('/admin/products')} />
+        <ListItem icon="pricetags-outline" title={t('manageOffers')} onPress={() => router.push('/admin/offers')} />
+        <ListItem icon="megaphone-outline" title={t('promoSettings')} onPress={() => router.push('/admin/promo')} />
         <ListItem icon="pricetags-outline" title={t('manageCategories')} onPress={() => router.push('/admin/categories')} />
         <ListItem icon="people-outline" title={t('manageCustomers')} onPress={() => router.push('/admin/customers')} />
         <ListItem icon="notifications-outline" title={t('notifications')} onPress={() => router.push('/notifications')} />

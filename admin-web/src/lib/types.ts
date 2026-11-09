@@ -18,6 +18,8 @@ export type Profile = {
   city: string;
   language: 'sq' | 'en';
   created_at: string;
+  /** offers migration */
+  promo_tester?: boolean;
 };
 
 export const isWholesale = (p: Pick<Profile, 'role' | 'wholesale_status'>) =>

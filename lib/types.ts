@@ -48,6 +48,12 @@ export type Product = {
   /** Admin only */
   retail_price: number | null;
   wholesale_price: number | null;
+  /** The customer's regular price (null for guests); offers migration */
+  regular_price?: number | null;
+  /** Current promotional price for this customer, if a live offer applies */
+  offer_price?: number | null;
+  offer_id?: string | null;
+  offer_ends_at?: string | null;
   stock: number | null;
   active: boolean;
   created_at: string;

@@ -9,6 +9,9 @@ import { I18nProvider, useI18n } from './lib/i18n';
 import { configProblem } from './lib/supabase';
 import { ArchivedOrders } from './pages/ArchivedOrders';
 import { Categories } from './pages/Categories';
+import { OfferEdit } from './pages/OfferEdit';
+import { Offers } from './pages/Offers';
+import { Promo } from './pages/Promo';
 import { Customers } from './pages/Customers';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
@@ -43,6 +46,9 @@ function Gate() {
             <Route path="/orders" element={<Orders />} />
             <Route path="/orders/:id" element={<OrderDetail />} />
             <Route path="/archived-orders" element={<ArchivedOrders />} />
+            <Route path="/offers" element={<Offers />} />
+            <Route path="/offers/:id" element={<OfferEdit />} />
+            <Route path="/promo" element={<Promo />} />
             <Route path="/customers" element={<Customers />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

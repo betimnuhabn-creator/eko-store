@@ -61,6 +61,10 @@ export default function TabsLayout() {
         options={{ title: t('tabProducts'), tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
+        name="offers"
+        options={{ title: t('tabOffers'), tabBarIcon: ({ color, size }) => <Ionicons name="pricetags-outline" color={color} size={size} /> }}
+      />
+      <Tabs.Screen
         name="cart"
         options={{
           title: t('tabCart'),

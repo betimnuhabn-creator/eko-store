@@ -3,13 +3,13 @@
     "name": "EKO Store",
     "slug": "eko-store",
     "scheme": "ekostore",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.ekoshpk.store",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
@@ -69,6 +69,19 @@
       },
       "router": {}
     },
-    "owner": "betimnuha"
+    "owner": "betimnuha",
+    "ios": {
+      "bundleIdentifier": "com.ekoshpk.store",
+      "buildNumber": "1",
+      "supportsTablet": false,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
+        "NSPhotoLibraryUsageDescription": "EKO Store p\u00ebrdor fotot p\u00ebr t\u00eb shtuar produkte. / EKO Store uses photos to add products.",
+        "NSCameraUsageDescription": "EKO Store p\u00ebrdor kamer\u00ebn p\u00ebr t\u00eb fotografuar produkte. / EKO Store uses the camera to photograph products.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
   }
 }

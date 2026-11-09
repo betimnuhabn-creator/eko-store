@@ -41,8 +41,12 @@ export function Screen({
   );
 }
 
-export function Card({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
-  return <View style={[s.card, style]}>{children}</View>;
+export function Card({ children, style, testID }: { children: React.ReactNode; style?: StyleProp<ViewStyle>; testID?: string }) {
+  return (
+    <View style={[s.card, style]} testID={testID}>
+      {children}
+    </View>
+  );
 }
 
 export function H1({ children }: { children: React.ReactNode }) {

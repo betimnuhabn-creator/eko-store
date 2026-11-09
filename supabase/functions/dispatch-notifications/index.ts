@@ -64,6 +64,12 @@ const cors = {
 };
 
 const eur = (v: unknown) => `${Number(v ?? 0).toFixed(2)} €`;
+// "100€", "85,50€" — short form used in promotional texts.
+const shortEur = (v: unknown) => {
+  const n = Number(v ?? 0);
+  return `${Number.isInteger(n) ? String(n) : n.toFixed(2).replace('.', ',')}€`;
+};
+export const isPromo = (type: string) => type.startsWith('promo_');
 
 const STATUS: Record<string, { sq: string; en: string }> = {
   new: { sq: 'E re', en: 'New' },
@@ -114,12 +120,40 @@ export function render(type: string, d: Record<string, any>, lang: 'sq' | 'en') 
         title: sq ? 'Kërkesa për shumicë nuk u aprovua' : 'Wholesale request not approved',
         body: sq ? 'Për më shumë informacion na kontaktoni.' : 'Please contact us for more information.',
       };
+    // ---- promotional (category 'promo'): never contain prices of another tier;
+    //      the database only stores the recipient's own prices in `d`.
+    case 'promo_new_product': {
+      const name = sq ? d.name : d.name_en || d.name;
+      return {
+        title: sq ? 'EKO Store – Produkt i ri!' : 'EKO Store – New product!',
+        body: sq ? `Shikoni produktin tonë më të ri: ${name}.` : `Check out our newest product: ${name}.`,
+      };
+    }
+    case 'promo_offer': {
+      const title = sq ? d.title : d.title_en || d.title;
+      return {
+        title: sq ? 'EKO Store – Ofertë speciale!' : 'EKO Store – Special offer!',
+        body: sq ? `Përfitoni nga çmimet promocionale: ${title}.` : `Enjoy our promotional prices: ${title}.`,
+      };
+    }
+    case 'promo_price_down':
+    case 'promo_price_up': {
+      const name = sq ? d.name : d.name_en || d.name;
+      const down = type === 'promo_price_down';
+      return {
+        title: sq ? (down ? 'EKO Store – Ulje çmimi!' : 'EKO Store – Ndryshim çmimi!') : (down ? 'EKO Store – Price drop!' : 'EKO Store – Price change!'),
+        body: sq
+          ? `Produkti ${name} nga ${shortEur(d.old)} tani ${shortEur(d.new)}.`
+          : `${name}: from ${shortEur(d.old)} now ${shortEur(d.new)}.`,
+      };
+    }
     default:
       return { title: 'EKO Store', body: '' };
   }
 }
 
 function route(type: string, d: Record<string, any>, role: string) {
+  if (isPromo(type)) return d.offer_id ? `/offers/${d.offer_id}` : d.product_id ? `/product/${d.product_id}` : '/offers';
   if (d.order_id) return role === 'admin' ? `/admin/orders/${d.order_id}` : `/orders/${d.order_id}`;
   if (type === 'wholesale_request' || type === 'new_customer') return '/admin/customers';
   return '/notifications';
@@ -139,8 +173,10 @@ async function sendPush(items: Claimed[], out: Outcome) {
     return n.push_tokens.map((to) => ({
       nid: n.id,
       msg: {
-        to, title, body, sound: 'default', channelId: 'default', priority: 'high',
-        data: { url: route(n.type, n.data as any, n.recipient_role), notification_id: n.id },
+        to, title, body, sound: 'default', priority: 'high',
+        // Separate Android channels: customers can mute promotions without losing order updates.
+        channelId: isPromo(n.type) ? 'promotions' : 'default',
+        data: { url: route(n.type, n.data as any, n.recipient_role), notification_id: n.id, category: isPromo(n.type) ? 'promo' : 'order' },
       },
     }));
   });
@@ -176,7 +212,7 @@ async function sendAdminEmails(items: Claimed[], out: Outcome) {
   const appUrl = Deno.env.get('APP_URL') ?? '';
   const url = Deno.env.get('RESEND_API_URL') ?? 'https://api.resend.com/emails';
   const events = new Map<string, Claimed[]>();
-  for (const n of items.filter((x) => x.recipient_role === 'admin')) {
+  for (const n of items.filter((x) => x.recipient_role === 'admin' && !isPromo(x.type))) {
     const k = n.type + JSON.stringify(n.data);
     events.set(k, [...(events.get(k) ?? []), n]);
   }
@@ -206,6 +242,11 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   try {
     // Leases the notifications; they are NOT marked delivered yet.
+    // Promotions: record offers that just became live and turn waiting promo
+    // events into notifications (opt-in, daily cap, test mode — all enforced
+    // in the database). Skipped silently if the offers migration is not installed.
+    await rpc('process_offer_activations', {}).catch(() => null);
+    await rpc('promo_fanout', { p_limit: 20 }).catch(() => null);
     const items = ((await rpc('claim_notifications', { p_limit: 200 })) ?? []) as Claimed[];
     const out: Outcome = { failed: new Map(), invalidTokens: [], sent: 0 };
     await sendPush(items, out);

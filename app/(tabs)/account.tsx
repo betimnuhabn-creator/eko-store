@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import { AuthHeader } from '../../components/AuthHeader';
+import { PromoPrefsCard } from '../../components/PromoPrefsCard';
 import { Badge, Banner, Button, Card, Chip, Field, H2, ListItem, Muted, Row, Screen } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { confirmAction, showMessage } from '../../lib/dialog';
@@ -136,6 +137,8 @@ export default function AccountScreen() {
           )}
         </Card>
       )}
+
+      <PromoPrefsCard />
 
       {languagePicker}
 

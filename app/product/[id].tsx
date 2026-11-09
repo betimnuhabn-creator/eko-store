@@ -4,6 +4,7 @@ import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-na
 import { PriceTag } from '../../components/PriceTag';
 import { ProductImage } from '../../components/ProductImage';
 import { Button, Card, Empty, H1, Loading, Muted, QuantityStepper, Row, Screen } from '../../components/ui';
+import { formatBelgrade } from '../../lib/belgrade';
 import { useCart } from '../../lib/cart';
 import { useCatalog } from '../../lib/catalog';
 import { showMessage } from '../../lib/dialog';
@@ -51,6 +52,9 @@ export default function ProductScreen() {
             {p.in_stock ? t('inStock') : t('onOrder')}
           </Text>
           <PriceTag product={p} size={24} />
+          {p.offer_price != null && p.offer_ends_at && (
+            <Muted>{t('offerEnds', { date: formatBelgrade(p.offer_ends_at) })}</Muted>
+          )}
           {!!pick(p.description, p.description_en) && (
             <Text style={{ color: colors.text, lineHeight: 21 }}>{pick(p.description, p.description_en)}</Text>
           )}

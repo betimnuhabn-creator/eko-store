@@ -13,3 +13,6 @@ test-results/
 playwright-report/
 supabase/functions/.local-ca.crt
 .live-check.json
+google-services.json
+GoogleService-Info.plist
+*.p8

@@ -29,9 +29,16 @@ export async function registerForPush(): Promise<void> {
   if (!projectId) return;
   try {
     if (Platform.OS === 'android') {
+      // Two channels so customers can mute promotions in Android settings
+      // without losing order updates.
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'EKO Store',
+        name: 'EKO Store – Porositë',
         importance: Notifications.AndroidImportance.HIGH,
+        lightColor: '#0166B4',
+      });
+      await Notifications.setNotificationChannelAsync('promotions', {
+        name: 'EKO Store – Oferta dhe produkte të reja',
+        importance: Notifications.AndroidImportance.DEFAULT,
         lightColor: '#0166B4',
       });
     }

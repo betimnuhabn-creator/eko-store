@@ -219,3 +219,8 @@ li.unread .bell-item span { font-weight: 700; }
   .filters .search { min-width: 0; flex: 1 1 100%; }
   .page-head h1 { font-size: 19px; }
 }
+
+/* ---------- offers / promotions */
+.alert-ok { background: var(--ok-soft); color: var(--ok); }
+.alert:not(.alert-error):not(.alert-warn):not(.alert-ok) { background: var(--brand-soft); color: var(--brand-dark); }
+.pick-list { list-style: none; margin: 6px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; max-height: 320px; overflow: auto; }

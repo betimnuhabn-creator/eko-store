@@ -4,6 +4,7 @@ import { Badge, Empty, Pager, Spinner, usePaging, useConfirm, useToast } from '.
 import { useNotifications } from '../lib/data';
 import { dateOnly, downloadCsv, money, normalize } from '../lib/format';
 import { errorText, useI18n, type TKey } from '../lib/i18n';
+import { setPromoTester } from '../lib/adminOffers';
 import { dispatchNotifications, supabase } from '../lib/supabase';
 import { isWholesale, type Profile } from '../lib/types';
 
@@ -160,6 +161,27 @@ export function Customers() {
                           {t('makeWholesale')}
                         </button>
                       )}
+                      {p.promo_tester !== undefined && (
+                        <button
+                          className={`btn btn-sm ${p.promo_tester ? 'btn-primary' : ''}`}
+                          title={t('promoTestHint')}
+                          disabled={busy === p.id}
+                          data-testid={`tester-${p.email}`}
+                          onClick={async () => {
+                            setBusy(p.id);
+                            try {
+                              await setPromoTester(p.id, !p.promo_tester);
+                              await load();
+                            } catch (e) {
+                              toast(errorText(t, e), 'error');
+                            } finally {
+                              setBusy(null);
+                            }
+                          }}
+                        >
+                          🧪 {t('promoTester')}
+                        </button>
+                      )}{' '}
                       {isWholesale(p) && (
                         <button className="btn btn-sm btn-danger-outline" disabled={busy === p.id} onClick={() => review(p, false, 'revokeConfirm')} data-testid={`revoke-${p.email}`}>
                           {t('revoke')}

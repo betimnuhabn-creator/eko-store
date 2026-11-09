@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './auth';
+import { money } from './format';
 import { TKey, useI18n } from './i18n';
 import { browserNotify, onPushOpened, registerForPush } from './push';
 import { supabase } from './supabase';
@@ -22,7 +23,7 @@ const NotificationsContext = createContext<Ctx | null>(null);
 
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
   const { session, isAdmin } = useAuth();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [version, setVersion] = useState(0);
   const uid = session?.user.id;
@@ -31,14 +32,21 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     (n: AppNotification) => {
       const d = { ...n.data } as Record<string, any>;
       if (d.status) d.status = t(`st_${d.status}` as TKey);
+      if (n.type.startsWith('promo_')) {
+        d.name = lang === 'en' && d.name_en ? d.name_en : d.name;
+        d.title = lang === 'en' && d.title_en ? d.title_en : d.title;
+        if (d.old != null) d.old = money(d.old);
+        if (d.new != null) d.new = money(d.new);
+      }
       const key = `n_${n.type}` as TKey;
       return t(key, d);
     },
-    [t],
+    [t, lang],
   );
 
   const link = useCallback(
     (n: AppNotification) => {
+      if (n.type.startsWith('promo_')) return n.data.offer_id ? `/offers/${n.data.offer_id}` : n.data.product_id ? `/product/${n.data.product_id}` : '/offers';
       if (n.data.order_id) return isAdmin ? `/admin/orders/${n.data.order_id}` : `/orders/${n.data.order_id}`;
       if (isAdmin && (n.type === 'wholesale_request' || n.type === 'new_customer')) return '/admin/customers';
       if (n.type.startsWith('wholesale_')) return '/account';
