@@ -10,11 +10,34 @@
 --   order history. Restoring clears those two columns again.
 -- * Only administrators: every function checks is_admin() itself, and
 --   clients still have no direct write access to the orders table.
+--
+-- Order statuses (unchanged, defined in v1): new, confirmed, preparing,
+-- shipped, delivered, cancelled + the v0.2 legacy statuses 'accepted'
+-- (an open order, like 'confirmed') and 'completed' (a finished order,
+-- like 'delivered'). Cancel is allowed for every open status, including
+-- 'accepted'; never for 'delivered' / 'completed'. Only 'cancelled'
+-- orders can be archived.
 -- =====================================================================
 
 begin;
 
 set local lock_timeout = '10s';
+
+-- ---------------------------------------------------------------------
+-- Pre-flight: this migration builds on EKO Store v1. Stop (and change
+-- nothing) if v1 is not installed in this database.
+-- ---------------------------------------------------------------------
+do $$
+begin
+  if to_regclass('public.orders') is null
+     or to_regprocedure('public.assert_admin()') is null
+     or to_regprocedure('public.notify_user(uuid, text, jsonb)') is null
+     or to_regprocedure('public.admin_set_order_status(uuid, text, text)') is null
+     or not exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = 'orders' and column_name = 'order_number') then
+    raise exception 'EKO Store v1 schema not found in this database. Run 20261105000000_eko_store_v1.sql first. Nothing was changed.';
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- New columns (existing rows: not archived)
@@ -146,5 +169,9 @@ grant execute on function public.admin_stats() to authenticated;
 -- RLS on public.orders is unchanged: customers still read only their own
 -- orders (archived ones included, as part of their history); admins read all.
 -- No INSERT/UPDATE/DELETE privilege exists for API roles on orders.
+
+-- Let the Supabase API see the new columns/functions immediately
+-- (delivered when the transaction commits).
+notify pgrst, 'reload schema';
 
 commit;
