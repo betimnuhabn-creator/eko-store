@@ -209,7 +209,9 @@ describe('promotional notifications', () => {
     assert.equal(r.type, 'promo_price_down');
     assert.deepEqual([Number(r.data.old), Number(r.data.new)], [100, 85]);
     assert.equal(r.data.name, `Produkt P`);
-    assert.ok(!JSON.stringify(r.data).includes('70') && !JSON.stringify(r.data).includes('65'), 'no wholesale prices for retail');
+    // Exactly these fields, and only the retail prices (wholesale was 70 -> 65).
+    assert.deepEqual(Object.keys(r.data).sort(), ['name', 'name_en', 'new', 'old', 'product_id']);
+    assert.ok(![70, 65].includes(Number(r.data.old)) && ![70, 65].includes(Number(r.data.new)), 'no wholesale prices for retail');
     const w = (await promoFor(whole)).find((x) => x.data.product_id === id && x.type.startsWith('promo_price'));
     assert.deepEqual([w.type, Number(w.data.old), Number(w.data.new)], ['promo_price_down', 70, 65], 'wholesale gets wholesale prices');
     await save(id, 'P', 95, 65);

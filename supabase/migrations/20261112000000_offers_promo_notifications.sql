@@ -689,23 +689,30 @@ grant execute on function public.promo_fanout(integer) to service_role;
 --    * record offers that just became live and fan out waiting events
 --    * call the Edge Function to deliver (needs promo_settings.functions_url)
 -- =====================================================================
+-- Optional: if pg_cron / pg_net cannot be enabled here, the rest of the
+-- migration still succeeds (offers start/expire on time anyway; activation
+-- notifications are then recorded whenever the Edge Function runs).
 do $$
 begin
-  if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
-    create extension if not exists pg_cron;
-    perform cron.schedule('eko-promo-minutely', '* * * * *',
-      'select public.process_offer_activations(), public.promo_fanout(20)');
-    if exists (select 1 from pg_available_extensions where name = 'pg_net') then
-      create extension if not exists pg_net;
-      perform cron.schedule('eko-dispatch-minutely', '* * * * *',
-        $c$select net.http_post(url := s.functions_url || '/dispatch-notifications',
-                                body := '{}'::jsonb,
-                                headers := '{"Content-Type": "application/json"}'::jsonb)
-           from public.promo_settings s where s.id and s.functions_url ~ '^https?://'$c$);
+  begin
+    if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
+      create extension if not exists pg_cron;               -- always installs into pg_catalog / schema "cron"
+      perform cron.schedule('eko-promo-minutely', '* * * * *',
+        'select public.process_offer_activations(), public.promo_fanout(20)');
+      if exists (select 1 from pg_available_extensions where name = 'pg_net') then
+        create extension if not exists pg_net with schema extensions;   -- not in "public"
+        perform cron.schedule('eko-dispatch-minutely', '* * * * *',
+          $c$select net.http_post(url := s.functions_url || '/dispatch-notifications',
+                                  body := '{}'::jsonb,
+                                  headers := '{"Content-Type": "application/json"}'::jsonb)
+             from public.promo_settings s where s.id and s.functions_url ~ '^https?://'$c$);
+      end if;
+    else
+      raise notice 'pg_cron not available: offers still start/expire on time; activation notifications are recorded when the Edge Function runs.';
     end if;
-  else
-    raise notice 'pg_cron not available: offers still start/expire on time; activation notifications are sent when the Edge Function runs.';
-  end if;
+  exception when others then
+    raise notice 'Scheduler not set up (%). Everything else is installed. Enable pg_cron and pg_net in Database > Extensions and run this file again.', sqlerrm;
+  end;
 end $$;
 
 notify pgrst, 'reload schema';
