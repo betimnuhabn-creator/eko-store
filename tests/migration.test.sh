@@ -34,18 +34,16 @@ expect() { # name, sql, expected
 }
 run_editor() { "${PSQL[@]}" -c "$(cat "$1")" >/dev/null; } # one query string, like the SQL Editor
 
+# Empty Supabase project WITHOUT touching the repository: reset the same
+# local database from a temporary copy of the config with no migrations/seed.
 empty_project() {
-  mv supabase/migrations/*.sql "$PARKED/"
-  mv supabase/seed.sql "$PARKED/" 2>/dev/null || true
-  npx supabase db reset >/dev/null 2>&1 || { restore; echo "db reset failed"; exit 1; }
-  restore
+  local w; w=$(mktemp -d)
+  mkdir -p "$w/supabase/migrations"
+  cp supabase/config.toml "$w/supabase/"
+  npx supabase db reset --workdir "$w" >/dev/null 2>&1 || { echo "empty db reset failed"; exit 1; }
+  rm -rf "$w"
 }
-restore() {
-  mv "$PARKED"/*.sql supabase/migrations/ 2>/dev/null || true
-  [[ -f "$PARKED/seed.sql" ]] && mv "$PARKED/seed.sql" supabase/ || true
-  mv supabase/migrations/seed.sql supabase/ 2>/dev/null || true
-}
-trap restore EXIT
+restore() { :; }
 
 lines_for() { # product sku filter -> JSON cart, read as the owner (customers cannot read products)
   q "select jsonb_agg(jsonb_build_object('product_id',id,'quantity',1)) from public.products where $1"

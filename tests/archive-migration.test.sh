@@ -17,9 +17,16 @@ ok() { echo "  ✔ $1"; pass=$((pass+1)); }
 bad() { echo "  ✖ $1"; fail=$((fail+1)); }
 expect() { local got; got=$(q "$2" 2>&1 | tr -d '\n') || true; [[ "$got" == "$3" ]] && ok "$1" || bad "$1 — expected [$3] got [$got]"; }
 run_editor() { "${PSQL[@]}" -c "$(cat "$1")" >/dev/null; }
-restore() { mv "$PARKED"/*.sql supabase/migrations/ 2>/dev/null || true; mv supabase/migrations/seed.sql supabase/ 2>/dev/null || true; }
-trap restore EXIT
-empty_project() { mv supabase/migrations/*.sql "$PARKED/"; mv supabase/seed.sql "$PARKED/"; npx supabase db reset >/dev/null 2>&1 || true; restore; }
+# Empty Supabase project WITHOUT touching the repository: reset the same
+# local database from a temporary copy of the config with no migrations/seed.
+empty_project() {
+  local w; w=$(mktemp -d)
+  mkdir -p "$w/supabase/migrations"
+  cp supabase/config.toml "$w/supabase/"
+  npx supabase db reset --workdir "$w" >/dev/null 2>&1 || { echo "empty db reset failed"; exit 1; }
+  rm -rf "$w"
+}
+restore() { :; }
 as_user() { # uid, sql -> result (or ERROR text)
   "${PSQL[@]}" -tA -c "begin; set local role authenticated; select set_config('request.jwt.claims', json_build_object('sub','$1','role','authenticated')::text, true); $2; commit;" 2>&1 | tail -n +2 | head -1
 }
