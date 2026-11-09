@@ -14,8 +14,13 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
-      "permissions": ["android.permission.POST_NOTIFICATIONS", "android.permission.CAMERA"],
-      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -59,7 +64,11 @@
       "typedRoutes": false
     },
     "extra": {
-      "eas": {}
-    }
+      "eas": {
+        "projectId": "1c168d33-6e79-4858-a0b5-063e3b498ace"
+      },
+      "router": {}
+    },
+    "owner": "betimnuha"
   }
 }
