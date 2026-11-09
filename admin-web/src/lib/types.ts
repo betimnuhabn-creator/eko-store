@@ -73,6 +73,8 @@ export type Order = {
   admin_note: string;
   created_at: string;
   updated_at: string;
+  archived_at: string | null;
+  archived_by: string | null;
   order_items?: OrderItem[];
   profiles?: Pick<Profile, 'email' | 'full_name' | 'business_name' | 'phone'> | null;
 };

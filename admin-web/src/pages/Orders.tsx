@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Empty, Pager, Spinner, StatusBadge, usePaging } from '../components/ui';
+import { Empty, Pager, Spinner, StatusBadge, useConfirm, usePaging, useToast } from '../components/ui';
 import { useNotifications } from '../lib/data';
 import { dateTime, downloadCsv, money, normalize } from '../lib/format';
 import { errorText, useI18n, type TKey } from '../lib/i18n';
+import { archiveOrder, canArchive, canCancel, cancelOrder } from '../lib/orders';
 import { supabase } from '../lib/supabase';
 import { ORDER_STATUSES, type Order } from '../lib/types';
 
@@ -18,11 +19,15 @@ export function Orders() {
   const [q, setQ] = useState('');
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const load = useCallback(async () => {
     let query = supabase
       .from('orders')
       .select('*, profiles(email,full_name,business_name,phone)')
+      .is('archived_at', null) // archived orders live in the Archive section
       .order('created_at', { ascending: false })
       .limit(1000);
     if (status === 'open') query = query.in('status', ['new', 'confirmed', 'preparing', 'shipped', 'accepted']);
@@ -50,6 +55,26 @@ export function Orders() {
   }, [orders, q]);
   const paging = usePaging(rows, 50);
   const totalSum = rows.filter((o) => o.status !== 'cancelled').reduce((a, o) => a + Number(o.total), 0);
+
+  async function act(o: Order, kind: 'cancel' | 'archive') {
+    const n = o.order_number;
+    const ok = await confirm(t(kind === 'cancel' ? 'cancelConfirm' : 'archiveConfirm', { n }), {
+      danger: kind === 'cancel',
+      ok: t(kind === 'cancel' ? 'cancelOrder' : 'archiveOrder'),
+    });
+    if (!ok) return;
+    setBusy(o.id);
+    try {
+      if (kind === 'cancel') await cancelOrder(o.id);
+      else await archiveOrder(o.id);
+      toast(t(kind === 'cancel' ? 'orderCancelled' : 'orderArchived', { n }));
+      await load();
+    } catch (e) {
+      toast(errorText(t, e), 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const setStatus = (v: string) => {
     const n = new URLSearchParams(params);
@@ -126,6 +151,7 @@ export function Orders() {
                   <th className="num">{t('items')}</th>
                   <th className="num">{t('total')}</th>
                   <th>{t('status')}</th>
+                  <th className="num">{t('actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -143,6 +169,18 @@ export function Orders() {
                     <td className="num">{money(o.total)}</td>
                     <td>
                       <StatusBadge status={o.status} />
+                    </td>
+                    <td className="num nowrap">
+                      {canCancel(o.status, o.archived_at) && (
+                        <button className="btn btn-sm btn-danger-outline" disabled={busy === o.id} onClick={() => act(o, 'cancel')} data-testid={`cancel-${o.order_number}`}>
+                          {t('cancelOrder')}
+                        </button>
+                      )}
+                      {canArchive(o.status, o.archived_at) && (
+                        <button className="btn btn-sm" disabled={busy === o.id} onClick={() => act(o, 'archive')} data-testid={`archive-${o.order_number}`}>
+                          🗄 {t('archiveOrder')}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -9,6 +9,7 @@ import { useI18n, type TKey } from '../lib/i18n';
 const NAV: { to: string; key: TKey; icon: string }[] = [
   { to: '/', key: 'dashboard', icon: '▦' },
   { to: '/orders', key: 'orders', icon: '🧾' },
+  { to: '/archived-orders', key: 'archivedOrders', icon: '🗄' },
   { to: '/products', key: 'products', icon: '📦' },
   { to: '/categories', key: 'categories', icon: '🏷' },
   { to: '/customers', key: 'customers', icon: '👥' },

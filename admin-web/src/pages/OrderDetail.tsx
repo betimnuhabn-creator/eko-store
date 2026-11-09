@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import logo from '../eko-mark.png';
-import { Empty, Spinner, StatusBadge, useToast } from '../components/ui';
+import { Empty, Spinner, StatusBadge, useConfirm, useToast } from '../components/ui';
 import { useNotifications } from '../lib/data';
 import { dateTime, money } from '../lib/format';
 import { errorText, useI18n, type TKey } from '../lib/i18n';
+import { archiveOrder, canArchive, canCancel, cancelOrder, restoreOrder } from '../lib/orders';
 import { dispatchNotifications, supabase } from '../lib/supabase';
 import { ORDER_STATUSES, type Order, type OrderStatus } from '../lib/types';
 
@@ -14,6 +15,7 @@ export function OrderDetail() {
   const { id = '' } = useParams();
   const { t } = useI18n();
   const toast = useToast();
+  const confirm = useConfirm();
   const { version } = useNotifications();
   const [order, setOrder] = useState<Order | null | undefined>(undefined);
   const [status, setStatus] = useState<OrderStatus>('new');
@@ -48,19 +50,58 @@ export function OrderDetail() {
     load();
   }
 
+  const archived = !!order.archived_at;
+  async function act(kind: 'cancel' | 'archive' | 'restore') {
+    const n = order!.order_number;
+    const text = { cancel: 'cancelConfirm', archive: 'archiveConfirm', restore: 'restoreConfirm' } as const;
+    const okLabel = { cancel: 'cancelOrder', archive: 'archiveOrder', restore: 'restoreOrder' } as const;
+    if (!(await confirm(t(text[kind], { n }), { danger: kind === 'cancel', ok: t(okLabel[kind]) }))) return;
+    setBusy(true);
+    try {
+      if (kind === 'cancel') await cancelOrder(order!.id, note !== order!.admin_note ? note : undefined);
+      if (kind === 'archive') await archiveOrder(order!.id);
+      if (kind === 'restore') await restoreOrder(order!.id);
+      const done = { cancel: 'orderCancelled', archive: 'orderArchived', restore: 'orderRestored' } as const;
+      toast(t(done[kind], { n }));
+      await load();
+    } catch (e) {
+      toast(errorText(t, e), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="page-head no-print">
         <h1>
-          <Link to="/orders" className="muted">
-            {t('orders')}
+          <Link to={archived ? '/archived-orders' : '/orders'} className="muted">
+            {t(archived ? 'archivedOrders' : 'orders')}
           </Link>{' '}
           / #{order.order_number}
         </h1>
-        <button className="btn" onClick={() => window.print()}>
-          🖨 {t('print')}
-        </button>
+        <div className="row">
+          {canCancel(order.status, order.archived_at) && (
+            <button className="btn btn-danger-outline" disabled={busy} onClick={() => act('cancel')} data-testid="detail-cancel">
+              {t('cancelOrder')}
+            </button>
+          )}
+          {canArchive(order.status, order.archived_at) && (
+            <button className="btn" disabled={busy} onClick={() => act('archive')} data-testid="detail-archive">
+              🗄 {t('archiveOrder')}
+            </button>
+          )}
+          {archived && (
+            <button className="btn btn-primary" disabled={busy} onClick={() => act('restore')} data-testid="detail-restore">
+              ↩ {t('restoreOrder')}
+            </button>
+          )}
+          <button className="btn" onClick={() => window.print()}>
+            🖨 {t('print')}
+          </button>
+        </div>
       </div>
+      {archived && <div className="alert alert-warn no-print">{t('archivedBanner', { date: dateTime(order.archived_at!) })}</div>}
 
       <div className="print-only print-head">
         <img src={logo} alt="" width={48} height={48} />
@@ -159,7 +200,7 @@ export function OrderDetail() {
               <p className="muted">{t('deletedCustomer')}</p>
             )}
           </div>
-          <div className="card no-print">
+          <div className="card no-print" hidden={archived}>
             <h2>{t('changeStatus')}</h2>
             <div className="chips">
               {ORDER_STATUSES.map((s) => (

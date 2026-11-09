@@ -240,3 +240,69 @@ test('built files contain no secret key', async () => {
   // the publishable key IS expected (public by design)
   assert.ok(code.includes(env.PUBLISHABLE_KEY));
 });
+
+test('admin: cancel -> archive -> archived section -> restore, each with a confirmation', async () => {
+  const p = await productBySku('HS-001');
+  const o = ok(await retail.c.rpc('place_order', { p_lines: [{ product_id: p.id, quantity: 1 }], p_delivery: delivery }));
+  const n = o.order_number;
+  const status = async () => (await service.from('orders').select('status,archived_at').eq('id', o.id).single()).data;
+  const pg = await page();
+  await login(pg, admin.email);
+  await pg.goto(`${BASE}#/orders`);
+  await pg.getByTestId(`order-${n}`).waitFor();
+  assert.equal(await pg.getByTestId(`archive-${n}`).count(), 0, 'no archive button before cancel');
+
+  // 1. Cancel — first dismiss the dialog: nothing may change
+  await pg.getByTestId(`cancel-${n}`).click();
+  await pg.getByRole('dialog').getByText(`#${n}`).waitFor();
+  await pg.getByRole('dialog').getByRole('button', { name: 'Anulo', exact: true }).click();
+  await pg.getByRole('dialog').waitFor({ state: 'detached' });
+  assert.equal((await status()).status, 'new', 'dismissed dialog changes nothing');
+  await pg.getByTestId(`cancel-${n}`).click();
+  await pg.getByRole('dialog').getByRole('button', { name: 'Anulo porosinë' }).click();
+  await pg.getByText(`Porosia #${n} u anulua`).waitFor();
+  assert.equal((await status()).status, 'cancelled');
+  const notes = ok(await retail.c.from('notifications').select('data').eq('type', 'order_status'));
+  assert.ok(notes.some((x) => x.data.order_id === o.id && x.data.status === 'cancelled'), 'customer notified');
+
+  // 2. Archive
+  await pg.getByTestId(`archive-${n}`).click();
+  await pg.getByRole('dialog').getByRole('button', { name: 'Arkivo' }).click();
+  await pg.getByTestId(`order-${n}`).waitFor({ state: 'detached' });
+  assert.ok((await status()).archived_at, 'archived in DB');
+  await shot(pg, 'aw-07-orders-actions');
+
+  // 3. Archived section + detail page
+  await pg.getByRole('link', { name: 'Arkiva e porosive' }).click();
+  await pg.getByTestId(`archived-${n}`).waitFor();
+  await shot(pg, 'aw-08-archive');
+  await pg.getByTestId(`archived-${n}`).getByRole('link').click();
+  await pg.getByText('Kjo porosi është e arkivuar').waitFor();
+  assert.equal(await pg.getByTestId('save-status').isVisible(), false, 'status cannot be changed while archived');
+  // customer still sees it
+  assert.equal(ok(await retail.c.from('orders').select('id').eq('id', o.id)).length, 1);
+
+  // 4. Restore
+  await pg.goto(`${BASE}#/archived-orders`);
+  await pg.getByTestId(`restore-${n}`).click();
+  await pg.getByRole('dialog').getByRole('button', { name: 'Rikthe' }).click();
+  await pg.getByTestId(`archived-${n}`).waitFor({ state: 'detached' });
+  assert.equal((await status()).archived_at, null);
+  assert.equal((await status()).status, 'cancelled');
+  await pg.goto(`${BASE}#/orders`);
+  await pg.getByTestId(`archive-${n}`).waitFor();
+  assert.deepEqual(cspErrors(pg), []);
+  await pg.context().close();
+});
+
+test('admin: delivered orders offer no cancel action', async () => {
+  const p = await productBySku('HS-001');
+  const o = ok(await retail.c.rpc('place_order', { p_lines: [{ product_id: p.id, quantity: 1 }], p_delivery: delivery }));
+  ok(await admin.c.rpc('admin_set_order_status', { p_order: o.id, p_status: 'delivered', p_note: null }));
+  const pg = await page();
+  await login(pg, admin.email);
+  await pg.goto(`${BASE}#/orders`);
+  await pg.getByTestId(`order-${o.order_number}`).waitFor();
+  assert.equal(await pg.getByTestId(`cancel-${o.order_number}`).count(), 0);
+  await pg.context().close();
+});

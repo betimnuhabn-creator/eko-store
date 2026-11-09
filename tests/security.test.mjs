@@ -9,14 +9,16 @@ import {
 
 const EKO_TABLES = ['profiles', 'categories', 'products', 'orders', 'order_items', 'notifications', 'push_tokens'];
 const EKO_DEFINER_FUNCTIONS = [
-  'admin_delete_category', 'admin_delete_product', 'admin_review_wholesale', 'admin_save_category',
+  'admin_archive_order', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product', 'admin_restore_order',
+  'admin_review_wholesale', 'admin_save_category',
   'admin_save_product', 'admin_set_order_status', 'admin_stats', 'assert_admin', 'cancel_my_order',
   'claim_notifications', 'delete_my_account', 'finish_notifications', 'forget_push_tokens', 'is_admin',
   'list_products', 'mark_notifications_read', 'new_profile', 'notify_admins', 'notify_user', 'place_order',
   'price_tier', 'register_push_token', 'request_wholesale', 'unregister_push_token', 'update_my_profile',
 ];
 const AUTHENTICATED_EXEC = [
-  'admin_delete_category', 'admin_delete_product', 'admin_review_wholesale', 'admin_save_category',
+  'admin_archive_order', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product', 'admin_restore_order',
+  'admin_review_wholesale', 'admin_save_category',
   'admin_save_product', 'admin_set_order_status', 'admin_stats', 'cancel_my_order', 'delete_my_account',
   'is_admin', 'list_products', 'mark_notifications_read', 'place_order', 'register_push_token',
   'request_wholesale', 'unregister_push_token', 'update_my_profile',
@@ -107,8 +109,8 @@ describe('database catalog audit', () => {
   });
 
   test('every admin function checks is_admin() first', () => {
-    for (const f of ['admin_delete_category', 'admin_delete_product', 'admin_review_wholesale', 'admin_save_category',
-      'admin_save_product', 'admin_set_order_status', 'admin_stats']) {
+    for (const f of ['admin_archive_order', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
+      'admin_restore_order', 'admin_review_wholesale', 'admin_save_category', 'admin_save_product', 'admin_set_order_status', 'admin_stats']) {
       const src = sql(`select prosrc from pg_proc where proname='${f}'`);
       const first = src.split('\n').map((l) => l.trim()).find((l) => l && l !== 'begin' && !l.startsWith('declare'));
       assert.match(src, /perform public\.assert_admin\(\);/, f);
@@ -275,6 +277,9 @@ describe('unauthorized access', () => {
       ['admin_delete_category', { p_id: '00000000-0000-0000-0000-000000000000' }],
       ['admin_review_wholesale', { p_user: a.id, p_approve: true }],
       ['admin_set_order_status', { p_order: '00000000-0000-0000-0000-000000000000', p_status: 'delivered', p_note: null }],
+      ['admin_cancel_order', { p_order: '00000000-0000-0000-0000-000000000000', p_note: null }],
+      ['admin_archive_order', { p_order: '00000000-0000-0000-0000-000000000000' }],
+      ['admin_restore_order', { p_order: '00000000-0000-0000-0000-000000000000' }],
     ];
     for (const [fn, args] of calls) await denied(a.c.rpc(fn, args), /ADMIN_ONLY/);
   });

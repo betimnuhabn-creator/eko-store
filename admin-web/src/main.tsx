@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from './lib/auth';
 import { CatalogProvider, NotificationsProvider } from './lib/data';
 import { I18nProvider, useI18n } from './lib/i18n';
 import { configProblem } from './lib/supabase';
+import { ArchivedOrders } from './pages/ArchivedOrders';
 import { Categories } from './pages/Categories';
 import { Customers } from './pages/Customers';
 import { Dashboard } from './pages/Dashboard';
@@ -41,6 +42,7 @@ function Gate() {
             <Route path="/categories" element={<Categories />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/orders/:id" element={<OrderDetail />} />
+            <Route path="/archived-orders" element={<ArchivedOrders />} />
             <Route path="/customers" element={<Customers />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

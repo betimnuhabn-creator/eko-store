@@ -20,7 +20,7 @@ export function Dashboard() {
   const load = useCallback(async () => {
     const [s, o] = await Promise.all([
       supabase.rpc('admin_stats'),
-      supabase.from('orders').select('*, profiles(business_name,full_name)').order('created_at', { ascending: false }).limit(10),
+      supabase.from('orders').select('*, profiles(business_name,full_name)').is('archived_at', null).order('created_at', { ascending: false }).limit(10),
     ]);
     if (s.data) setStats(s.data as Stats);
     setLatest((o.data ?? []) as Order[]);
