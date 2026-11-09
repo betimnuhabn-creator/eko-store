@@ -266,8 +266,10 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     // Claimed notifications are retried automatically after their 5-minute lease.
+    // The caller may be anyone (the function is public and takes no input), so
+    // details go to the function logs only, never into the response.
     console.error(e);
-    return new Response(JSON.stringify({ error: String((e as Error).message ?? e) }), {
+    return new Response(JSON.stringify({ error: 'dispatch failed' }), {
       status: 500, headers: { ...cors, 'Content-Type': 'application/json' },
     });
   }

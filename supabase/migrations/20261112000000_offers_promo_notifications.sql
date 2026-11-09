@@ -77,9 +77,14 @@ alter table public.profiles
   add column if not exists promo_price_changes boolean not null default false,
   add column if not exists promo_tester boolean not null default false;
 
--- Products: when the product was announced (existing products: already).
-alter table public.products add column if not exists announced_at timestamptz;
-update public.products set announced_at = created_at where announced_at is null;
+-- Products: when the product was announced. Existing products count as
+-- already announced: the column is added with a default that PostgreSQL
+-- stores once for the existing rows (no UPDATE, so no trigger runs and
+-- products.updated_at and every other column stay exactly as they are).
+-- The default is removed again so that products created later start
+-- unannounced. Running the file again changes nothing here.
+alter table public.products add column if not exists announced_at timestamptz default now();
+alter table public.products alter column announced_at drop default;
 
 -- Order lines: which offer gave the price (new lines only; old lines stay null).
 alter table public.order_items add column if not exists offer_id uuid;
@@ -701,12 +706,23 @@ begin
         'select public.process_offer_activations(), public.promo_fanout(20)');
       if exists (select 1 from pg_available_extensions where name = 'pg_net') then
         create extension if not exists pg_net with schema extensions;   -- not in "public"
+        -- Does nothing until an admin saves functions_url (validated by
+        -- admin_set_promo_settings: https://<ref>.supabase.co/functions/v1).
+        -- The request carries no key: dispatch-notifications takes no input and
+        -- only delivers what the database has already queued.
         perform cron.schedule('eko-dispatch-minutely', '* * * * *',
           $c$select net.http_post(url := s.functions_url || '/dispatch-notifications',
                                   body := '{}'::jsonb,
-                                  headers := '{"Content-Type": "application/json"}'::jsonb)
+                                  headers := '{"Content-Type": "application/json"}'::jsonb,
+                                  timeout_milliseconds := 30000)
              from public.promo_settings s where s.id and s.functions_url ~ '^https?://'$c$);
       end if;
+      -- Keep the scheduler's own run log small (only the eko-* jobs' entries,
+      -- older than 7 days; no business data).
+      perform cron.schedule('eko-cron-log-cleanup', '17 3 * * *',
+        $c$delete from cron.job_run_details
+            where end_time < now() - interval '7 days'
+              and jobid in (select jobid from cron.job where jobname like 'eko-%')$c$);
     else
       raise notice 'pg_cron not available: offers still start/expire on time; activation notifications are recorded when the Edge Function runs.';
     end if;

@@ -38,9 +38,15 @@
 
 1. **Database** — SQL Editor: run `supabase/migrations/20261112000000_offers_promo_notifications.sql`
    (requires the v1 and order-archive migrations; stops with a message otherwise).
-   It enables `pg_cron` and `pg_net` and schedules two one-minute jobs.
+   It enables `pg_cron` and `pg_net` (schema `extensions`) and schedules three jobs:
+   `eko-promo-minutely`, `eko-dispatch-minutely` (idle until step 3) and
+   `eko-cron-log-cleanup` (daily, deletes only the eko-* jobs' run log older than 7 days).
 2. **Edge Function** — redeploy `supabase/functions/dispatch-notifications/index.ts`
    (dashboard editor or `npx supabase functions deploy dispatch-notifications --no-verify-jwt`).
+   Keep **Verify JWT = OFF** (as today): the scheduler calls it without a key, and the new
+   `sb_publishable_` keys are not JWTs. This is safe because the function reads no input —
+   it only delivers what the database has already queued under its own rules (opt-in,
+   test mode, daily cap, one notification per event and person) — and returns no details.
 3. **Scheduler address** — PC panel → *Njoftimet promocionale* → *Adresa e funksioneve*:
    `https://mfpmcriffqlhlgaptdzx.supabase.co/functions/v1` → *Ruaj*.
 4. **Android push (Firebase)** — required for notifications on the phone:

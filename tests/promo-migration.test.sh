@@ -29,10 +29,10 @@ restore() { :; }
 U=00000000-0000-0000-0000-00000000000
 snap() { q "select md5(string_agg(t, '|' order by t)) from (
   select row(id,email)::text t from auth.users union all
-  select row(id,email,full_name,phone,role,wholesale_status,business_name,address,city,created_at)::text from public.profiles union all
-  select row(id,order_number,customer_id,status,price_tier,total,item_count,delivery_name,admin_note,archived_at,created_at)::text from public.orders union all
+  select row(id,email,full_name,phone,role,wholesale_status,business_name,address,city,created_at,updated_at)::text from public.profiles union all
+  select row(id,order_number,customer_id,status,price_tier,total,item_count,delivery_name,admin_note,archived_at,created_at,updated_at)::text from public.orders union all
   select row(id,order_id,product_id,quantity,unit_price,product_name,sku)::text from public.order_items union all
-  select row(id,sku,name,retail_price,wholesale_price,stock,active,images,category_id)::text from public.products) s"; }
+  select row(id,sku,name,retail_price,wholesale_price,stock,active,images,category_id,created_at,updated_at)::text from public.products) s"; }
 counts() { q "select (select count(*) from auth.users)||'/'||(select count(*) from public.profiles)||'/'||(select count(*) from public.orders)||'/'||(select count(*) from public.order_items)||'/'||(select count(*) from public.products)"; }
 
 echo "A. Without the archive migration: must stop, change nothing"
@@ -61,15 +61,25 @@ insert into public.push_tokens (token,user_id) values ('ExponentPushToken[k]','$
 "
 before=$(snap); before_c=$(counts)
 run_editor "$MIG" && ok "migration run 1" || bad "run 1"
+# A product saved as a draft (inactive) after the first run must stay
+# unannounced when the file is run again (it is announced when published).
+q "insert into public.products (sku,name,retail_price,wholesale_price,stock,active) values ('DRAFT','Draft',10,8,1,false)"
 run_editor "$MIG" && ok "migration run 2 (idempotent)" || bad "run 2"
+expect "re-run does not mark unpublished drafts as announced" "select count(*) from public.products where sku='DRAFT' and announced_at is null" "1"
+q "delete from public.products where sku='DRAFT'"
 [[ "$(counts)" == "$before_c" ]] && ok "no rows lost (users/profiles/orders/lines/products = $before_c)" || bad "counts changed"
 [[ "$(snap)" == "$before" ]] && ok "checksum of existing customers, orders, lines, product prices identical" || bad "existing data changed"
 expect "existing products marked as already announced (no notification)" "select count(*) from public.products where announced_at is null" "0"
+expect "products created after the migration start unannounced (no column default left)" "select coalesce(column_default,'none') from information_schema.columns where table_schema='public' and table_name='products' and column_name='announced_at'" "none"
 expect "no promo events created by the migration" "select count(*) from public.promo_events" "0"
 expect "promotional notifications OFF and in test mode" "select enabled::text||'/'||test_only::text from public.promo_settings" "false/true"
 expect "customers' promo preferences default OFF (opt-in)" "select count(*) from public.profiles where promo_new_products or promo_offers or promo_price_changes" "0"
 expect "existing notifications are category 'order'" "select count(*) from public.notifications where category <> 'order'" "0"
-expect "scheduler jobs created" "select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'eko-%'" "eko-dispatch-minutely,eko-promo-minutely"
+expect "scheduler jobs created" "select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'eko-%'" "eko-cron-log-cleanup,eko-dispatch-minutely,eko-promo-minutely"
+expect "dispatch job: 30 s HTTP timeout, only when a URL is saved" "select (command like '%timeout_milliseconds := 30000%' and command like '%functions_url ~%')::text from cron.job where jobname='eko-dispatch-minutely'" "true"
+expect "log cleanup only touches eko-* job entries" "select (command like '%jobname like ''eko-%''%')::text from cron.job where jobname='eko-cron-log-cleanup'" "true"
+expect "pg_net installed outside public" "select n.nspname from pg_extension e join pg_namespace n on n.oid=e.extnamespace where e.extname='pg_net'" "extensions"
+expect "RLS on all 4 new tables" "select count(*) from pg_tables where schemaname='public' and tablename in ('offers','offer_items','promo_events','promo_settings') and rowsecurity" "4"
 expect "historical order line prices untouched" "select string_agg(unit_price::text, ',') from public.order_items" "100.00,70.00"
 expect "archived order still archived" "select count(*) from public.orders where archived_at is not null" "1"
 

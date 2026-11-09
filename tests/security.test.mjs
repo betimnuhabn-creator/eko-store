@@ -7,7 +7,8 @@ import {
   KEY, URL, client, delivery, denied, makeAdmin, ok, productBySku, service, signUp, sql,
 } from './helpers.mjs';
 
-const EKO_TABLES = ['profiles', 'categories', 'products', 'orders', 'order_items', 'notifications', 'push_tokens'];
+const EKO_TABLES = ['profiles', 'categories', 'products', 'orders', 'order_items', 'notifications', 'push_tokens',
+  'offers', 'offer_items', 'promo_events', 'promo_settings'];
 const EKO_DEFINER_FUNCTIONS = [
   'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
   'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
@@ -372,5 +373,72 @@ describe('wholesale approval flow', () => {
     // role 'wholesale' without approval must NOT give wholesale prices
     ok(await service.from('profiles').update({ role: 'wholesale', wholesale_status: 'pending' }).eq('id', other.id));
     assert.equal(await priceOf(other), Number(p1.retail_price));
+  });
+});
+
+describe('offers + promotional notifications: abuse attempts', () => {
+  let cust, p, settings0;
+  const settingsNow = () => sql('select enabled::text||test_only::text||daily_cap||functions_url from public.promo_settings');
+  const Z = '00000000-0000-0000-0000-000000000000';
+  before(async () => {
+    cust = await signUp('sec-promo');
+    p = await productBySku('HS-001');
+    settings0 = settingsNow();
+  });
+
+  test('internal SECURITY DEFINER helpers are not callable by guests or customers', async () => {
+    for (const c of [client(), cust.c]) {
+      await denied(c.rpc('best_offer', { p_product: p.id, p_tier: 'wholesale' }));       // would reveal wholesale offer prices
+      await denied(c.rpc('promo_queue_new_product', { p_product: p.id }));               // would queue a push to everyone
+      await denied(c.rpc('promo_queue_price', { p_product: p.id, r_old: 1, r_new: 2, w_old: 1, w_new: 2 }));
+      await denied(c.rpc('process_offer_activations'));
+      await denied(c.rpc('promo_fanout', { p_limit: 200 }));
+      await denied(c.rpc('products_promo_trigger'));
+    }
+  });
+
+  test('offers, offer items, promo events and settings are not reachable through the API', async () => {
+    for (const c of [client(), cust.c]) {
+      for (const t of ['offers', 'offer_items', 'promo_events', 'promo_settings']) {
+        await denied(c.from(t).select('*'));
+        await denied(c.from(t).insert({}));
+      }
+      await denied(c.from('promo_settings').update({ enabled: true, test_only: false }).eq('id', true));
+    }
+    assert.equal(settingsNow(), settings0);
+  });
+
+  test('customers cannot make themselves promo testers or change other people\'s preferences', async () => {
+    ok(await cust.c.rpc('update_my_profile', { p: { promo_tester: true, promo_offers: true } }));
+    await denied(cust.c.from('profiles').update({ promo_tester: true }).eq('id', cust.id));
+    ok(await cust.c.rpc('set_my_promo_preferences', { p_new_products: true, p_offers: null, p_price_changes: null }));
+    assert.equal(sql(`select promo_tester::text||promo_new_products::text||promo_offers::text from public.profiles where id='${cust.id}'`), 'falsetruefalse');
+    await denied(client().rpc('set_my_promo_preferences', { p_new_products: true, p_offers: true, p_price_changes: true }));
+  });
+
+  test('promo and offer admin functions refuse customers and guests', async () => {
+    const calls = [
+      ['admin_list_offers', {}],
+      ['admin_save_offer', { p: { title_sq: 'x', starts_at: '2026-01-01', ends_at: '2027-01-01', items: [{ product_id: p.id, offer_price: 0 }] } }],
+      ['admin_set_offer_active', { p_id: Z, p_active: true }],
+      ['admin_cancel_offer', { p_id: Z }],
+      ['admin_get_promo_settings', {}],
+      ['admin_set_promo_settings', { p: { enabled: true, test_only: false, functions_url: 'https://evil.supabase.co/functions/v1' } }],
+      ['admin_set_promo_tester', { p_user: cust.id, p_tester: true }],
+    ];
+    for (const [fn, args] of calls) {
+      await denied(cust.c.rpc(fn, args), /ADMIN_ONLY/);
+      await denied(client().rpc(fn, args));
+    }
+    assert.equal(settingsNow(), settings0);
+  });
+
+  test('admins can only point the scheduler at a Supabase functions URL', async () => {
+    const admin = await makeAdmin('sec-promo-admin');
+    for (const url of ['http://example.com', 'https://evil.com/functions/v1', 'https://x.supabase.co.evil.com/functions/v1',
+      "https://x.supabase.co/functions/v1'; drop table x;--"]) {
+      await denied(admin.c.rpc('admin_set_promo_settings', { p: { functions_url: url } }), /INVALID_FUNCTIONS_URL/);
+    }
+    assert.equal(settingsNow(), settings0);
   });
 });
