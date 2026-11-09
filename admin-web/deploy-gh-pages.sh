@@ -4,7 +4,7 @@
 # Uses only the public values in .env.production. Refuses to run with a secret key.
 set -euo pipefail
 cd "$(dirname "$0")"
-grep -qE 'sb_secret_|service_role' .env.production && { echo "Secret key in .env.production — aborting"; exit 1; }
+grep -vE '^[[:space:]]*#' .env.production | grep -qE 'sb_secret_|service_role' && { echo "Secret key in .env.production — aborting"; exit 1; }
 npm run build
 touch dist/.nojekyll
 REPO_ROOT=$(git rev-parse --show-toplevel)
