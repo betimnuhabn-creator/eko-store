@@ -57,6 +57,23 @@ type Claimed = {
   claim_token: string;
 };
 
+// Constant-time string comparison.
+function same(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+// True only for calls made with this project's server key (operators, tests).
+// The app and the database scheduler call without it: they get only {ok:true}.
+function isInternal(req: Request) {
+  let key: string;
+  try { key = serverKey(); } catch { return false; }
+  const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+  return [req.headers.get('apikey') ?? '', bearer].some((v) => v !== '' && same(v, key));
+}
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -238,8 +255,19 @@ async function sendAdminEmails(items: Claimed[], out: Outcome) {
   }
 }
 
+// Public endpoint (Verify JWT OFF): the app calls it right after an action and
+// the database scheduler every minute. It reads NOTHING from the request; it can
+// only deliver what the database has already queued (under the database's rules),
+// leased so that concurrent calls never send anything twice. Anonymous callers
+// learn nothing: no counts, no error details. Only POST runs a dispatch.
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'method not allowed' }), {
+      status: 405, headers: { ...cors, 'Content-Type': 'application/json', Allow: 'POST, OPTIONS' },
+    });
+  }
+  const internal = isInternal(req);
   try {
     // Leases the notifications; they are NOT marked delivered yet.
     // Promotions: record offers that just became live and turn waiting promo
@@ -261,7 +289,10 @@ Deno.serve(async (req) => {
       p_failed: failed,
       p_error: [...new Set(out.failed.values())].join('; ').slice(0, 500) || null,
     });
-    return new Response(JSON.stringify({ claimed: items.length, delivered: delivered.length, failed: failed.length, sent: out.sent }), {
+    const result = internal
+      ? { ok: true, claimed: items.length, delivered: delivered.length, failed: failed.length, sent: out.sent }
+      : { ok: true };
+    return new Response(JSON.stringify(result), {
       headers: { ...cors, 'Content-Type': 'application/json' },
     });
   } catch (e) {

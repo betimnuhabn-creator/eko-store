@@ -153,6 +153,74 @@ describe('overlapping offers: the screen shows exactly what checkout charges', (
   });
 });
 
+describe('pricing model: list_products, list_offers and place_order always agree', () => {
+  test('overlapping, tied, expired, inactive, cancelled and future offers; regular price lowered below an offer', async () => {
+    const ENDS = iso(3600);  // identical end time => real ties
+    const P = {};
+    for (const [k, r, w] of [['M1', 100, 80], ['M2', 50, 40], ['M3', 30, 20], ['M4', 10, 8], ['M5', 60, 45]]) P[k] = { id: await product(k, r, w), r, w };
+    const model = [];  // independent model of every offer created
+    const mk = async (items, { starts = -60, ends = null, active = true, cancel = false } = {}) => {
+      const id = ok(await admin.c.rpc('admin_save_offer', { p: {
+        title_sq: `Model ${model.length}`, title_en: 'Model', starts_at: iso(starts), ends_at: ends === null ? ENDS : iso(ends), active,
+        items: items.map(([k, op, ow]) => ({ product_id: P[k].id, offer_price: op, offer_wholesale_price: ow ?? null })) } }));
+      if (cancel) ok(await admin.c.rpc('admin_cancel_offer', { p_id: id }));
+      model.push({ id, live: active && !cancel && starts < 0 && (ends === null || ends > 0),
+        endsAt: ends === null ? ENDS : iso(ends), items: Object.fromEntries(items.map(([k, op, ow]) => [k, { op, ow: ow ?? null }])) });
+      return id;
+    };
+    await mk([['M1', 90], ['M2', 45, 35]]);                    // M1 retail 90 (wholesale min(80,90)=80: no wholesale offer)
+    await mk([['M1', 70], ['M2', 45, 35], ['M5', 50]]);         // M1 tie at 70 with the next; M2 tie in both tiers
+    await mk([['M1', 70, 60], ['M5', 50, 44]]);                 // M1 wholesale 60; M5 retail tie at 50
+    await mk([['M3', 25, 18]]);                                  // regular price is lowered below this later
+    await mk([['M4', 9]], { starts: -7200, ends: -1, active: true });   // never live (already over)
+    await mk([['M4', 5]], { active: false });                    // inactive
+    await mk([['M4', 4]], { cancel: true });                     // cancelled
+    await mk([['M4', 6], ['M5', 1, 1]], { starts: 3600, ends: 7200 }); // scheduled (future)
+    await save(P.M3.id, 'M3', 24, 17); P.M3.r = 24; P.M3.w = 17;  // now BELOW the M3 offer (25 / 18)
+
+    // Expected price per tier, computed independently from the model.
+    const expected = (k, tier) => {
+      const regular = tier === 'wholesale' ? P[k].w : P[k].r;
+      const cands = model.filter((o) => o.live && o.items[k]).map((o) => {
+        const it = o.items[k];
+        const price = tier === 'wholesale' ? Math.min(it.ow ?? P[k].w, it.op) : it.op;
+        return { id: o.id, price, ends: o.endsAt };
+      }).sort((a, b) => a.price - b.price || a.ends.localeCompare(b.ends) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const best = cands[0];
+      return best && best.price < regular ? { price: best.price, offer: best.id } : { price: regular, offer: null };
+    };
+    // Sanity: the model contains the interesting cases.
+    assert.deepEqual([expected('M1', 'retail').price, expected('M1', 'wholesale').price, expected('M2', 'wholesale').price,
+      expected('M3', 'retail').offer, expected('M4', 'retail').offer, expected('M5', 'wholesale').price], [70, 60, 35, null, null, 44]);
+
+    for (const [u, tier] of [[retail, 'retail'], [whole, 'wholesale'], [null, 'guest']]) {
+      const lp = ok(await (u ? u.c : client()).rpc('list_products'));
+      const lo = ok(await (u ? u.c : client()).rpc('list_offers'));
+      for (const k of Object.keys(P)) {
+        const e = expected(k, tier === 'guest' ? 'retail' : tier);
+        const prod = lp.find((x) => x.id === P[k].id);
+        const rows = lo.filter((x) => x.product_id === P[k].id);
+        // list_products
+        assert.equal(prod.offer_id, e.offer, `${tier} ${k} list_products offer`);
+        assert.equal(prod.price === null ? null : Number(prod.price), tier === 'guest' ? null : e.price, `${tier} ${k} list_products price`);
+        // list_offers: exactly one row (the same offer) when an offer applies, none otherwise
+        assert.deepEqual(rows.map((x) => x.offer_id), e.offer ? [e.offer] : [], `${tier} ${k} list_offers rows`);
+        if (e.offer && tier !== 'guest') assert.equal(Number(rows[0].offer_price), e.price, `${tier} ${k} list_offers price`);
+      }
+      if (!u) continue;
+      // place_order: same unit price and the same offer recorded on each line
+      const o = ok(await u.c.rpc('place_order', { p_lines: Object.values(P).map((x) => ({ product_id: x.id, quantity: 1, unit_price: 0 })), p_delivery: delivery }));
+      const lines = ok(await service.from('order_items').select('product_id,unit_price,offer_id').eq('order_id', o.id));
+      for (const k of Object.keys(P)) {
+        const e = expected(k, tier);
+        const l = lines.find((x) => x.product_id === P[k].id);
+        assert.deepEqual([Number(l.unit_price), l.offer_id], [e.price, e.offer], `${tier} ${k} place_order`);
+      }
+      assert.equal(Number(o.total), Object.keys(P).reduce((sum, k) => sum + expected(k, tier).price, 0), `${tier} order total`);
+    }
+  });
+});
+
 describe('admin offer management', () => {
   test('validation: price must be below regular, valid dates, at least one product', async () => {
     const id = await product('V', 10, 8);

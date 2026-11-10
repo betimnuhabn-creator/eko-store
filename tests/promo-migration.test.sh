@@ -112,7 +112,7 @@ q "update public.promo_settings set functions_url = 'http://kong:8000/functions/
 echo "    (waiting up to 75 s for pg_cron + HTTP response)"
 for i in $(seq 1 30); do sleep 5; [[ "$(q "select public.promo_dispatch_status()->>'state'")" == "ok" ]] && break; done
 expect "pg_cron reached dispatch-notifications: HTTP 200" "select (public.promo_dispatch_status()->>'status_code')" "200"
-expect "...and the function answered normally" "select (content::jsonb ? 'claimed')::text from net._http_response where id = (select dispatch_request_id from public.promo_settings)" "true"
+expect "...and the function answered normally (no counts for a keyless caller)" "select content from net._http_response where id = (select dispatch_request_id from public.promo_settings)" '{"ok":true}'
 q "update public.promo_settings set functions_url = ''"
 
 echo "E. Back to the normal local database"

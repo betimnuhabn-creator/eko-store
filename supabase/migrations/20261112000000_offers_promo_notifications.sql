@@ -175,6 +175,9 @@ create index if not exists notifications_promo_recent_idx
 -- 4. PRICES: best live offer, list_products, place_order
 -- =====================================================================
 -- Best live offer price of a product for a tier ('retail' | 'wholesale').
+-- THE single source of truth for offer prices: list_products(), list_offers()
+-- and place_order() all use it. Ties (same price) are broken by the earlier
+-- end, then by offer id, so every caller always picks the same offer.
 create or replace function public.best_offer(p_product uuid, p_tier text)
 returns table (offer_id uuid, offer_price numeric, ends_at timestamptz)
 language sql stable security definer set search_path = '' as $$
@@ -189,7 +192,7 @@ language sql stable security definer set search_path = '' as $$
   where oi.product_id = p_product
     and o.active and o.cancelled_at is null
     and now() >= o.starts_at and now() < o.ends_at
-  order by 2 asc, o.ends_at asc
+  order by 2 asc, o.ends_at asc, o.id asc
   limit 1
 $$;
 
@@ -327,12 +330,13 @@ language sql stable security definer set search_path = '' as $$
            case when t.tier = 'wholesale'
                 then least(coalesce(oi.offer_wholesale_price, p.wholesale_price), oi.offer_price)
                 else oi.offer_price end as offer) x
-  -- If a product is in several live offers, show it only under the offer that
-  -- gives the lowest price for this customer: exactly what checkout charges.
+  -- A product is listed ONCE, under the offer that best_offer() picks for this
+  -- customer's tier (guests: retail) and only if it is below the regular price:
+  -- exactly the offer and price that list_products() shows and place_order() charges.
   cross join lateral public.best_offer(p.id, case when t.tier = 'wholesale' then 'wholesale' else 'retail' end) b
   where o.active and o.cancelled_at is null and now() >= o.starts_at and now() < o.ends_at
-    and x.offer <= b.offer_price
-    and (t.tier = 'guest' or x.offer < x.regular)
+    and o.id = b.offer_id
+    and x.offer < x.regular
   order by o.ends_at, o.created_at, p.name
 $$;
 

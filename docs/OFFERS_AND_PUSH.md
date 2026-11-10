@@ -49,7 +49,9 @@
    Keep **Verify JWT = OFF** (as today): the scheduler calls it without a key, and the new
    `sb_publishable_` keys are not JWTs. This is safe because the function reads no input —
    it only delivers what the database has already queued under its own rules (opt-in,
-   test mode, daily cap, one notification per event and person) — and returns no details.
+   test mode, daily cap, one notification per event and person). Only `POST` runs a dispatch
+   (other methods: 405); callers without the server key receive just `{"ok":true}` — no counts,
+   no error details.
 3. **Scheduler address** — PC panel → *Njoftimet promocionale* → *Adresa e funksioneve*:
    `https://mfpmcriffqlhlgaptdzx.supabase.co/functions/v1` → *Ruaj*. Only this form
    (`https://<ref>.supabase.co/functions/v1`) is accepted. Within a minute the panel shows

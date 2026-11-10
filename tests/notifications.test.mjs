@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { after, before, beforeEach, describe, test } from 'node:test';
-import { KEY, URL, delivery, makeAdmin, ok, productBySku, service, signUp } from './helpers.mjs';
+import { KEY, URL, delivery, env, makeAdmin, ok, productBySku, service, signUp } from './helpers.mjs';
 
 // ---- fake Expo push + Resend --------------------------------------------
 const mock = { push: 'ok', email: 'ok', pushes: [], emails: [] };
@@ -37,7 +37,8 @@ const server = createServer((req, res) => {
 
 const dispatch = async () => {
   const r = await fetch(`${URL}/functions/v1/dispatch-notifications`, {
-    method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: '{}',
+    // Server key: the response then includes the counts the tests need.
+    method: 'POST', headers: { apikey: env.SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }, body: '{}',
   });
   const j = await r.json();
   assert.equal(r.status, 200, JSON.stringify(j));
@@ -73,6 +74,30 @@ const newOrder = async () => {
 };
 
 describe('notification delivery', () => {
+  test('anonymous callers (Verify JWT OFF): delivery works, but they learn nothing and cannot use other methods', async () => {
+    const { n } = await newOrder();
+    for (const method of ['GET', 'PUT', 'DELETE', 'PATCH']) {
+      const r = await fetch(`${URL}/functions/v1/dispatch-notifications`, { method, headers: { apikey: KEY } });
+      assert.equal(r.status, 405, method);
+      await r.text();
+    }
+    assert.equal((await note(n.id)).dispatched_at, null, 'other methods did not dispatch anything');
+    // No key at all, publishable key, a customer's session, and a forged key: same minimal answer.
+    const customerToken = (await customer.c.auth.getSession()).data.session.access_token;
+    for (const headers of [{}, { apikey: KEY }, { apikey: KEY, Authorization: `Bearer ${customerToken}` },
+      { apikey: 'x'.repeat(env.SERVICE_ROLE_KEY.length) }, { Authorization: `Bearer ${env.SERVICE_ROLE_KEY.slice(0, -1)}x` }]) {
+      const r = await fetch(`${URL}/functions/v1/dispatch-notifications`, {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        // A body is ignored: it can neither add recipients nor change what is sent.
+        body: JSON.stringify({ recipient_id: customer.id, type: 'promo_offer', title: 'phish', p_limit: 100000 }),
+      });
+      assert.equal(r.status, 200);
+      assert.deepEqual(await r.json(), { ok: true }, 'no counts, no details for anonymous callers');
+    }
+    assert.ok((await note(n.id)).dispatched_at, 'the queued notification was delivered normally');
+    assert.ok(mock.pushes.every((m) => m.title !== 'phish'), 'nothing from the request was sent');
+  });
+
   test('success: push + admin e-mail sent, then marked dispatched', async () => {
     const { order, n } = await newOrder();
     assert.equal(n.dispatched_at, null);
