@@ -16,3 +16,8 @@ supabase/functions/.local-ca.crt
 google-services.json
 GoogleService-Info.plist
 *.p8
+
+# Database dumps (backups) never belong in the repository
+/*.sql
+*.dump
+eko-backup-*/
