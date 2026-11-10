@@ -32,8 +32,10 @@ snap() { q "select md5(string_agg(t, '|' order by t)) from (
   select row(id,email,full_name,phone,role,wholesale_status,business_name,address,city,created_at,updated_at)::text from public.profiles union all
   select row(id,order_number,customer_id,status,price_tier,total,item_count,delivery_name,admin_note,archived_at,created_at,updated_at)::text from public.orders union all
   select row(id,order_id,product_id,quantity,unit_price,product_name,sku)::text from public.order_items union all
-  select row(id,sku,name,retail_price,wholesale_price,stock,active,images,category_id,created_at,updated_at)::text from public.products) s"; }
-counts() { q "select (select count(*) from auth.users)||'/'||(select count(*) from public.profiles)||'/'||(select count(*) from public.orders)||'/'||(select count(*) from public.order_items)||'/'||(select count(*) from public.products)"; }
+  select row(id,sku,name,retail_price,wholesale_price,stock,active,images,category_id,created_at,updated_at)::text from public.products union all
+  select row(id,recipient_id,type,data,read_at,dispatched_at,created_at)::text from public.notifications union all
+  select row(token,user_id)::text from public.push_tokens) s"; }
+counts() { q "select (select count(*) from auth.users)||'/'||(select count(*) from public.profiles)||'/'||(select count(*) from public.orders)||'/'||(select count(*) from public.order_items)||'/'||(select count(*) from public.products)||'/'||(select count(*) from public.notifications)"; }
 
 echo "A. Without the archive migration: must stop, change nothing"
 empty_project
@@ -58,6 +60,10 @@ update public.orders set archived_at = now(), archived_by='${U}1' where status='
 insert into public.order_items (order_id,product_id,quantity,unit_price,product_name,sku,unit)
   select o.id, p.id, 1, o.total, p.name, p.sku, 'copë' from public.orders o, public.products p where p.sku='P1';
 insert into public.push_tokens (token,user_id) values ('ExponentPushToken[k]','${U}2');
+insert into public.notifications (recipient_id,type,data,read_at,dispatched_at) values
+ ('${U}2','order_status','{\"order_number\":1,\"status\":\"confirmed\"}', now(), now()),
+ ('${U}1','new_order','{\"order_number\":1}', null, now()),
+ ('${U}3','order_status','{\"order_number\":2,\"status\":\"cancelled\"}', null, null);
 "
 before=$(snap); before_c=$(counts)
 run_editor "$MIG" && ok "migration run 1" || bad "run 1"
@@ -79,6 +85,7 @@ expect "scheduler jobs created" "select string_agg(jobname, ',' order by jobname
 expect "promo_dispatch: 30 s HTTP timeout, only for a valid URL" "select (prosrc like '%timeout_milliseconds := 30000%' and prosrc like '%promo_functions_url_valid(u)%')::text from pg_proc where proname='promo_dispatch'" "true"
 expect "log cleanup only touches eko-* job entries" "select (command like '%jobname like ''eko-%''%')::text from cron.job where jobname='eko-cron-log-cleanup'" "true"
 expect "pg_net installed outside public" "select n.nspname from pg_extension e join pg_namespace n on n.oid=e.extnamespace where e.extname='pg_net'" "extensions"
+expect "promo event status allows 'failed' (constraint replaced, not duplicated)" "select count(*)||':'||bool_and(pg_get_constraintdef(oid) like '%failed%')::text from pg_constraint where conrelid='public.promo_events'::regclass and contype='c' and conname like '%status%'" "1:true"
 expect "RLS on all 4 new tables" "select count(*) from pg_tables where schemaname='public' and tablename in ('offers','offer_items','promo_events','promo_settings') and rowsecurity" "4"
 expect "historical order line prices untouched" "select string_agg(unit_price::text, ',') from public.order_items" "100.00,70.00"
 expect "archived order still archived" "select count(*) from public.orders where archived_at is not null" "1"

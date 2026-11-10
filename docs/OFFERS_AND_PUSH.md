@@ -25,6 +25,9 @@
   down or up (both retail and wholesale customers get *their own* old/new price only).
 * Duplicate prevention (one notification per event and person; one per offer ever; quick edits
   merged; price edited back = nothing sent), daily cap, batching (200 per run, 100 per Expo request).
+* An event that cannot be processed is marked **Dështoi / Failed** (reason shown to admins) and
+  never blocks the others. If a product is in two live offers at once, customers see (and pay)
+  only the cheaper one.
 
 ## Safety switches
 

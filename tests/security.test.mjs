@@ -452,6 +452,22 @@ describe('offers + promotional notifications: abuse attempts', () => {
     assert.equal(settingsNow(), settings0);
   });
 
+  test('pg_net (net schema) is not reachable through the API', async () => {
+    for (const headers of [{ apikey: KEY }, { apikey: KEY, Authorization: `Bearer ${cust.token}` }]) {
+      for (const [path, method, body] of [
+        ['/rest/v1/rpc/http_post', 'POST', JSON.stringify({ url: 'https://example.com' })],
+        ['/rest/v1/http_request_queue?select=*', 'GET', undefined],
+        ['/rest/v1/_http_response?select=*', 'GET', undefined],
+      ]) {
+        for (const profile of ['net', 'extensions']) {
+          const res = await fetch(URL + path, { method, body, headers: { ...headers, 'Content-Type': 'application/json',
+            'Accept-Profile': profile, 'Content-Profile': profile } });
+          assert.ok(res.status >= 400, `${profile}${path} -> ${res.status} ${await res.text()}`);
+        }
+      }
+    }
+  });
+
   test('the scheduler only calls a valid functions address', () => {
     const valid = (u) => sql(`select public.promo_functions_url_valid(${u === null ? 'null' : `'${u}'`})`);
     assert.equal(valid('https://mfpmcriffqlhlgaptdzx.supabase.co/functions/v1'), 't');

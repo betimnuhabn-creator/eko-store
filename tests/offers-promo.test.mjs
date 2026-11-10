@@ -133,6 +133,26 @@ describe('offer prices', () => {
   });
 });
 
+describe('overlapping offers: the screen shows exactly what checkout charges', () => {
+  test('a product in two live offers is listed only under the cheaper one (per tier)', async () => {
+    const id = await product('OV', 100, 80);
+    const cheapRetail = await offer([{ product_id: id, offer_price: 70 }]);                               // wholesale: min(80,70)=70
+    const cheapWhole = await offer([{ product_id: id, offer_price: 90, offer_wholesale_price: 60 }]);     // wholesale: 60
+    const listed = async (u) => ok(await (u ? u.c : client()).rpc('list_offers')).filter((x) => x.product_id === id);
+    const r = await listed(retail);
+    assert.deepEqual(r.map((x) => [x.offer_id, Number(x.offer_price)]), [[cheapRetail, 70]]);
+    assert.equal(Number((await priceOf(retail, id)).price), 70);
+    const w = await listed(whole);
+    assert.deepEqual(w.map((x) => [x.offer_id, Number(x.offer_price)]), [[cheapWhole, 60]]);
+    assert.equal(Number((await priceOf(whole, id)).price), 60);
+    const g = await listed(null);
+    assert.deepEqual(g.map((x) => x.offer_id), [cheapRetail], 'guests: the offer that applies to retail');
+    // Checkout charges the same.
+    const o = ok(await whole.c.rpc('place_order', { p_lines: [{ product_id: id, quantity: 1 }], p_delivery: delivery }));
+    assert.equal(Number(o.total), 60);
+  });
+});
+
 describe('admin offer management', () => {
   test('validation: price must be below regular, valid dates, at least one product', async () => {
     const id = await product('V', 10, 8);
@@ -308,6 +328,36 @@ describe('promotional notifications', () => {
     const adminNotes = ok(await service.from('notifications').select('category,type').eq('recipient_id', admin.id).eq('type', 'new_order'));
     assert.ok(adminNotes.length > 0 && adminNotes.every((x) => x.category === 'order'));
     assert.ok(o.id);
+  });
+
+  test('fan-out handles every event type; a broken event is marked failed and never blocks the others', async () => {
+    // Events whose subject is gone are skipped, not errors.
+    const gone = await product('GONE', 10, 8);
+    ok(await fanout());
+    ok(await admin.c.rpc('admin_save_product', { p: { id: gone, sku: `GONE-${run}`, name: 'Produkt GONE', retail_price: 9, wholesale_price: 8, stock: 5 } }));
+    ok(await admin.c.rpc('admin_delete_product', { p_id: gone }));
+    const cancelled = await offer([{ product_id: await product('CX', 50, 40), offer_price: 45 }]);
+    ok(await admin.c.rpc('admin_cancel_offer', { p_id: cancelled }));
+    // A corrupt event (cannot happen through the app; simulates any unexpected error),
+    // queued BEFORE a valid one.
+    const bad = sql(`insert into public.promo_events (kind, product_id, data)
+      values ('price', (select id from public.products where sku='HS-001'), '{"retail_old":"abc","retail_new":"1","wholesale_old":"x","wholesale_new":"1"}')
+      returning id`).split('\n')[0];
+    const good = await product('AFTERBAD', 12, 10);
+    const n = ok(await fanout());
+    assert.ok(n >= 1, 'the valid event after the broken one was delivered');
+    assert.equal(sql(`select status||':'||(error like '%numeric%')::text from public.promo_events where id='${bad}'`), 'failed:true');
+    assert.equal((await events(good))[0].status, 'sent');
+    assert.equal((await promoFor(retail, { type: 'promo_new_product' })).filter((x) => x.data.product_id === good).length, 1);
+    assert.equal(sql(`select count(*) from public.promo_events where status='pending' and updated_at < now()`), '0', 'nothing left blocked');
+    assert.equal(sql(`select status from public.promo_events where offer_id='${cancelled}'`), 'skipped', 'offer cancelled before fan-out: never sent');
+    assert.equal(sql(`select count(*) from public.promo_events where status='failed' and id<>'${bad}'`), '0', 'no other event failed (deleted product, cancelled offer)');
+    // The PC panel can show why an event failed.
+    const st = ok(await admin.c.rpc('admin_get_promo_settings'));
+    assert.ok(st.events.some((e) => e.id === bad && e.status === 'failed' && e.error));
+    // A second run does not touch the failed event again.
+    ok(await fanout());
+    assert.equal(sql(`select status from public.promo_events where id='${bad}'`), 'failed');
   });
 
   test('notifications are readable only by their recipient', async () => {

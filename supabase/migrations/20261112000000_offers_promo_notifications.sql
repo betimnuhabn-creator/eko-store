@@ -150,6 +150,10 @@ create table if not exists public.promo_events (
   updated_at timestamptz not null default now(),
   processed_at timestamptz
 );
+alter table public.promo_events add column if not exists error text;   -- why an event 'failed'
+alter table public.promo_events drop constraint if exists promo_events_status_check;
+alter table public.promo_events add constraint promo_events_status_check
+  check (status in ('pending', 'sent', 'suppressed', 'skipped', 'failed'));
 -- At most one waiting price event per product (later edits merge into it).
 create unique index if not exists promo_events_one_pending_price
   on public.promo_events (product_id) where kind = 'price' and status = 'pending';
@@ -323,7 +327,11 @@ language sql stable security definer set search_path = '' as $$
            case when t.tier = 'wholesale'
                 then least(coalesce(oi.offer_wholesale_price, p.wholesale_price), oi.offer_price)
                 else oi.offer_price end as offer) x
+  -- If a product is in several live offers, show it only under the offer that
+  -- gives the lowest price for this customer: exactly what checkout charges.
+  cross join lateral public.best_offer(p.id, case when t.tier = 'wholesale' then 'wholesale' else 'retail' end) b
   where o.active and o.cancelled_at is null and now() >= o.starts_at and now() < o.ends_at
+    and x.offer <= b.offer_price
     and (t.tier = 'guest' or x.offer < x.regular)
   order by o.ends_at, o.created_at, p.name
 $$;
@@ -431,6 +439,9 @@ begin
       update public.promo_events set status = 'suppressed', processed_at = now() where id = e.id;
       continue;
     end if;
+    -- Each event in its own sub-transaction: an event that cannot be processed
+    -- is marked 'failed' (with the reason) and never blocks the others.
+    begin
     -- The thing announced must still be live.
     if (e.kind in ('new_product', 'price') and not exists (select 1 from public.products where id = e.product_id and active))
        or (e.kind = 'offer' and not exists (select 1 from public.offers o where o.id = e.offer_id and o.active
@@ -477,6 +488,9 @@ begin
 
     update public.promo_events set status = 'sent', recipients = n, processed_at = now() where id = e.id;
     total := total + n;
+    exception when others then
+      update public.promo_events set status = 'failed', error = left(sqlerrm, 500), processed_at = now() where id = e.id;
+    end;
   end loop;
   return total;
 end $$;
@@ -665,7 +679,7 @@ begin
     'pending_events', (select count(*) from public.promo_events where status = 'pending'),
     'events', coalesce((select jsonb_agg(x order by x.created_at desc) from (
         select e.id, e.kind, e.status, e.recipients, e.created_at, e.processed_at,
-               coalesce(pr.name, o.title_sq) as subject, e.data
+               coalesce(pr.name, o.title_sq) as subject, e.data, e.error
         from public.promo_events e
         left join public.products pr on pr.id = e.product_id
         left join public.offers o on o.id = e.offer_id

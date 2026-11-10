@@ -58,7 +58,7 @@ export type PromoSettings = {
   testers: number;
   opted_in: number;
   pending_events: number;
-  events: { id: string; kind: 'new_product' | 'offer' | 'price'; status: string; recipients: number | null; created_at: string; subject: string | null; data: any }[];
+  events: { id: string; kind: 'new_product' | 'offer' | 'price'; status: string; recipients: number | null; created_at: string; subject: string | null; data: any; error?: string | null }[];
 };
 
 export async function offersSupported(): Promise<boolean> {
