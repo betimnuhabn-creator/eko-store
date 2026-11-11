@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { router, Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
 import { Text, View } from 'react-native';
@@ -24,6 +24,18 @@ function LanguageSync() {
   return null;
 }
 
+/** A temporary password set by an administrator must be changed before anything else. */
+function PasswordChangeGuard() {
+  const { session, profile } = useAuth();
+  const pathname = usePathname();
+  useEffect(() => {
+    if (session && profile?.must_change_password && pathname !== '/change-password') {
+      router.replace('/change-password?forced=1');
+    }
+  }, [session, profile?.must_change_password, pathname]);
+  return null;
+}
+
 function NotConfigured() {
   const { t } = useI18n();
   return (
@@ -45,6 +57,7 @@ export default function RootLayout() {
               <CartProvider>
                 <NotificationsProvider>
                   <LanguageSync />
+                  <PasswordChangeGuard />
                   <StatusBar style="light" />
                   <Stack
                     screenOptions={{

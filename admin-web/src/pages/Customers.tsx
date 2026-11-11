@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { PasswordModal } from '../components/PasswordModal';
 import { Badge, Empty, Pager, Spinner, usePaging, useConfirm, useToast } from '../components/ui';
 import { useNotifications } from '../lib/data';
 import { dateOnly, downloadCsv, money, normalize } from '../lib/format';
 import { errorText, useI18n, type TKey } from '../lib/i18n';
 import { setPromoTester } from '../lib/adminOffers';
+import { canManagePasswords } from '../lib/adminPassword';
 import { dispatchNotifications, supabase } from '../lib/supabase';
 import { isWholesale, type Profile } from '../lib/types';
 
@@ -21,6 +23,12 @@ export function Customers() {
   const [rows, setRows] = useState<Profile[] | null>(null);
   const [stats, setStats] = useState<Stats>({});
   const [busy, setBusy] = useState<string | null>(null);
+  // "Fjalëkalimi" only for the main administrator (decided by the server).
+  const [pwdAdmin, setPwdAdmin] = useState(false);
+  const [pwdFor, setPwdFor] = useState<Profile | null>(null);
+  useEffect(() => {
+    canManagePasswords().then(setPwdAdmin);
+  }, []);
 
   const load = useCallback(async () => {
     const [p, o] = await Promise.all([
@@ -187,6 +195,14 @@ export function Customers() {
                           {t('revoke')}
                         </button>
                       )}
+                      {pwdAdmin && (
+                        <>
+                          {' '}
+                          <button className="btn btn-sm" onClick={() => setPwdFor(p)} data-testid={`password-${p.email}`}>
+                            🔑 {t('pwdButton')}
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -196,6 +212,7 @@ export function Customers() {
         )}
         <Pager {...paging} total={list.length} />
       </div>
+      {pwdFor && <PasswordModal key={pwdFor.id} customer={pwdFor} onClose={() => setPwdFor(null)} />}
     </>
   );
 }

@@ -8,7 +8,7 @@ import {
 } from './helpers.mjs';
 
 const EKO_TABLES = ['profiles', 'categories', 'products', 'orders', 'order_items', 'notifications', 'push_tokens',
-  'offers', 'offer_items', 'promo_events', 'promo_settings'];
+  'offers', 'offer_items', 'promo_events', 'promo_settings', 'password_reset_audit'];
 const EKO_DEFINER_FUNCTIONS = [
   'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
   'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
@@ -20,7 +20,7 @@ const EKO_DEFINER_FUNCTIONS = [
   'price_tier', 'process_offer_activations', 'products_promo_trigger', 'promo_fanout', 'promo_queue_new_product',
   'promo_queue_price', 'register_push_token', 'request_wholesale', 'set_my_promo_preferences', 'unregister_push_token',
   'update_my_profile',
-].concat(['best_offer', 'promo_dispatch', 'promo_dispatch_status']).sort();
+].concat(['best_offer', 'promo_dispatch', 'promo_dispatch_status', 'record_admin_password_change', 'clear_must_change_password']).sort();
 const AUTHENTICATED_EXEC = [
   'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
   'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',

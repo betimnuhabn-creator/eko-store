@@ -14,7 +14,8 @@ import { colors } from '../lib/theme';
 // only then is the new password sent. Nothing else in the profile changes.
 export default function ChangePasswordScreen() {
   const { t } = useI18n();
-  const { session } = useAuth();
+  const { session, profile, refreshProfile, signOut } = useAuth();
+  const forced = !!profile?.must_change_password;
   const [current, setCurrent] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -52,11 +53,13 @@ export default function ChangePasswordScreen() {
     setPassword('');
     setConfirm('');
     setDone(true); // only after Supabase accepted the change
+    await refreshProfile(); // the database has cleared "must change password"
   }
 
   return (
     <Screen style={{ maxWidth: 460 }}>
       <Stack.Screen options={{ title: t('changePassword') }} />
+      {forced && <Banner tone="warning" text={t('pwMustChange')} />}
       <Card style={{ gap: 12 }}>
         <Text style={{ color: colors.muted }}>{email}</Text>
         <Field
@@ -73,6 +76,10 @@ export default function ChangePasswordScreen() {
         {done && <Banner tone="success" text={t('pwChangedProfile')} />}
         <Button title={t('savePassword')} onPress={save} loading={busy} testID="pw-change-save" />
       </Card>
+      {done && !forced && (
+        <Button variant="secondary" title={t('tabProducts')} onPress={() => router.replace('/')} testID="pw-continue" />
+      )}
+      {forced && <Button variant="ghost" icon="log-out-outline" title={t('logout')} onPress={signOut} />}
     </Screen>
   );
 }

@@ -422,3 +422,8 @@ enabled = true
 # already queued in the database, so it does not need a user JWT.
 [functions.dispatch-notifications]
 verify_jwt = false
+
+# EKO Store: admin sets a customer's password. The function verifies the
+# caller's session itself (and the main-admin list + re-authentication).
+[functions.admin-set-password]
+verify_jwt = false

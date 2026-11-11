@@ -20,6 +20,7 @@ export type Profile = {
   created_at: string;
   /** offers migration */
   promo_tester?: boolean;
+  must_change_password?: boolean;
 };
 
 export const isWholesale = (p: Pick<Profile, 'role' | 'wholesale_status'>) =>

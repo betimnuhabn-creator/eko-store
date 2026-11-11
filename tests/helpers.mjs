@@ -43,6 +43,22 @@ export async function makeAdmin(name = 'admin') {
   return u;
 }
 
+// Main administrator for passwords (listed in PASSWORD_ADMIN_EMAILS in tests/functions.test.env).
+export const MAIN_ADMIN = 'eko-main-admin@test.local';
+
+/** The main administrator (fixed e-mail, listed in PASSWORD_ADMIN_EMAILS). */
+export async function mainAdmin() {
+  const c = client();
+  let r = await c.auth.signInWithPassword({ email: MAIN_ADMIN, password: 'secret123' });
+  if (r.error) {
+    ok(await c.auth.signUp({ email: MAIN_ADMIN, password: 'secret123', options: { data: { full_name: 'Admin Kryesor' } } }));
+    r = await c.auth.signInWithPassword({ email: MAIN_ADMIN, password: 'secret123' });
+  }
+  ok(await service.from('profiles').update({ role: 'admin' }).eq('id', r.data.user.id));
+  return { c, id: r.data.user.id, email: MAIN_ADMIN, token: r.data.session.access_token };
+}
+
+
 export const ok = ({ data, error }) => {
   assert.ifError(error);
   return data;

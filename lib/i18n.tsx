@@ -86,6 +86,7 @@ const sq = {
   currentPassword: 'Fjalëkalimi aktual',
   pwCurrentWrong: 'Fjalëkalimi aktual nuk është i saktë.',
   pwChangedProfile: 'Fjalëkalimi u ndryshua me sukses.',
+  pwMustChange: 'Administratori ju ka vendosur një fjalëkalim të përkohshëm. Për sigurinë tuaj, vendosni tani një fjalëkalim të ri.',
   invalidCredentials: 'Email ose fjalëkalim i pasaktë.',
   emailNotConfirmed: 'Konfirmoni email-in para se të hyni.',
   // catalog
@@ -420,6 +421,7 @@ const en: Record<TKey, string> = {
   currentPassword: 'Current password',
   pwCurrentWrong: 'The current password is not correct.',
   pwChangedProfile: 'Your password was changed.',
+  pwMustChange: 'An administrator gave you a temporary password. For your security, please set a new password now.',
   invalidCredentials: 'Wrong email or password.',
   emailNotConfirmed: 'Please confirm your email before logging in.',
   loginToSeePrices: 'Log in to see prices',

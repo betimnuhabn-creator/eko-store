@@ -28,6 +28,8 @@ export type Profile = {
   city: string;
   language: 'sq' | 'en';
   created_at: string;
+  /** Set when an administrator gave a temporary password (cleared by the database after a change). */
+  must_change_password?: boolean;
 };
 
 export type Category = { id: string; name_sq: string; name_en: string; sort_order: number; active: boolean };
