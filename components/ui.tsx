@@ -135,9 +135,9 @@ export function Checkbox({ checked, onChange, label }: { checked: boolean; onCha
   );
 }
 
-export function Chip({ label, active, onPress }: { label: string; active?: boolean; onPress?: () => void }) {
+export function Chip({ label, active, onPress, testID }: { label: string; active?: boolean; onPress?: () => void; testID?: string }) {
   return (
-    <Pressable onPress={onPress} style={[s.chip, active && { backgroundColor: colors.brand, borderColor: colors.brand }]}>
+    <Pressable testID={testID} accessibilityRole="button" accessibilityState={{ selected: !!active }} onPress={onPress} style={[s.chip, active && { backgroundColor: colors.brand, borderColor: colors.brand }]}>
       <Text style={{ color: active ? '#fff' : colors.text, fontWeight: '600', fontSize: 13 }}>{label}</Text>
     </Pressable>
   );

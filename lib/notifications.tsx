@@ -33,13 +33,15 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       const d = { ...n.data } as Record<string, any>;
       if (d.status) d.status = t(`st_${d.status}` as TKey);
       if (n.type.startsWith('promo_')) {
-        d.name = lang === 'en' && d.name_en ? d.name_en : d.name;
-        d.title = lang === 'en' && d.title_en ? d.title_en : d.title;
+        d.name = (lang === 'en' && d.name_en ? d.name_en : d.name) ?? '';
+        d.title = (lang === 'en' && d.title_en ? d.title_en : d.title) ?? '';
         if (d.old != null) d.old = money(d.old);
         if (d.new != null) d.new = money(d.new);
       }
+      for (const k of Object.keys(d)) if (d[k] == null) d[k] = '';
       const key = `n_${n.type}` as TKey;
-      return t(key, d);
+      // Never show "undefined" or a raw {placeholder} if a value is missing.
+      return t(key, d).replace(/\{\w+\}/g, '').replace(/\s{2,}/g, ' ').trim();
     },
     [t, lang],
   );

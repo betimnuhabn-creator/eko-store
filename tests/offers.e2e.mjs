@@ -199,11 +199,11 @@ test('Promotions: PC settings in test mode, tester flag, price drop reaches only
   assert.equal(forReal.length, 0, 'real customer NOT notified in test mode');
   await pg.context().close();
 
-  // tester sees it under "Ofertat" in notifications, tap opens the product
+  // tester sees it under "Ndryshimet e çmimeve" in notifications, tap opens the product
   const app = await page({ mobile: true });
   await appLogin(app, tester.email);
   await app.goto(`${APP}/notifications`);
-  await v(app, 'text=Ofertat (').click();
+  await v(app, '[data-testid="notif-cat-prices"]').click();
   await v(app, 'text=Ulje çmimi: Tub PPR 20mm nga 3,20 € tani 2,90 €').click();
   await app.waitForURL(new RegExp(`/product/${hs2.id}$`));
   await shot(app, 'of-06-notification-opens-product');
