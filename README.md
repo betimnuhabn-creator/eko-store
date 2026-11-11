@@ -9,7 +9,7 @@ One codebase for the **Android app** and the **web shop/admin panel** of EKO SHP
 | Area | What works |
 |---|---|
 | Languages | Albanian (default) and English, switchable everywhere. Product and category names/descriptions in both languages. |
-| Customers | Register (name, phone, email; optional business with name and NUI/NIPT), log in, reset password with an e-mail code, edit profile/address, request wholesale later, delete account (required by Google Play). |
+| Customers | Register (name, phone, email; optional business with name and NUI/NIPT), log in, reset a forgotten password by e-mail link or code and change it in the profile (see docs/PASSWORD_RESET.md), edit profile/address, request wholesale later, delete account (required by Google Play). |
 | Prices | Guests see products but **no prices**. Retail customers see retail prices. **Approved** wholesale customers see wholesale prices. Prices are enforced in the database, not just hidden in the app. |
 | Shopping | Catalog with search and categories, product page with photo gallery, "In stock / Available to order", cart (saved on the device), checkout with delivery address. |
 | Orders | No online payment: *cash on delivery* or *bank transfer after confirmation*. Totals are calculated on the server. Customers see order history and status, and can cancel while the order is "New". |
@@ -38,8 +38,7 @@ tests/                   backend integration tests + browser end-to-end tests
    It works on an empty project **and** on a project where the old v0.2 `schema.sql` was run, and it keeps existing data. Running it twice is safe.
    (Alternatively, with the CLI: `npx supabase link --project-ref <ref>` then `npx supabase db push`.)
 3. **Auth → URL configuration:** set *Site URL* to your web shop address.
-4. **Auth → Email templates → Reset password:** add this line so the app's code-based reset works on Android and web:
-   `<p>Kodi / Code: <strong>{{ .Token }}</strong></p>`
+4. **Auth → URL Configuration, SMTP and the Reset password e-mail template:** see `docs/PASSWORD_RESET.md`.
 5. **Auth → SMTP:** configure your own SMTP (e.g. Resend). Supabase's built-in mailer only sends a few e-mails per hour.
 6. **Notification function:**
    ```bash

@@ -1,56 +1,114 @@
 import { router, Stack } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Text } from 'react-native';
+import { PasswordFields } from '../components/PasswordFields';
 import { Banner, Button, Card, Field, Screen } from '../components/ui';
-import { showMessage } from '../lib/dialog';
-import { errorText, useI18n } from '../lib/i18n';
+import { TKey, useI18n } from '../lib/i18n';
+import { isValidEmail, passwordErrorKey, passwordProblem, requestPasswordReset } from '../lib/passwordReset';
 import { supabase } from '../lib/supabase';
+import { colors } from '../lib/theme';
 
-// Code-based reset: works the same in the Android app and on the web.
-// The Supabase "Reset password" e-mail template must contain {{ .Token }} (see README).
+const RESEND_SECONDS = 60;
+
+// "Keni harruar fjalëkalimin?" — sends the Supabase recovery e-mail. The e-mail
+// link opens the reset page / app (app/reset-password.tsx). If the e-mail also
+// shows a 6-digit code, it can be entered here instead.
 export default function ForgotPasswordScreen() {
   const { t } = useI18n();
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [status, setStatus] = useState<'idle' | 'sent' | 'rate_limited' | 'network'>('idle');
+  const [busy, setBusy] = useState(false);
+  const [wait, setWait] = useState(0);
+  const [showCode, setShowCode] = useState(false);
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState('');
+  const [codeError, setCodeError] = useState<TKey | null>(null);
+
+  useEffect(() => {
+    if (wait <= 0) return;
+    const id = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(id);
+  }, [wait]);
 
   async function send() {
-    if (!email.trim()) return showMessage(t('error'), t('required'));
+    setEmailError(null);
+    if (!isValidEmail(email)) return setEmailError(t('fpInvalidEmail'));
     setBusy(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+    const result = await requestPasswordReset(email);
     setBusy(false);
-    if (error) return showMessage(t('error'), errorText(t, error));
-    setSent(true);
+    setStatus(result);
+    if (result === 'sent') setWait(RESEND_SECONDS);
   }
 
-  async function reset() {
-    if (!code.trim() || password.length < 6) return showMessage(t('error'), t('passwordHint'));
+  async function resetWithCode() {
+    setCodeError(null);
+    if (!/^\d{6,10}$/.test(code.trim())) return setCodeError('pwLinkExpired');
+    const problem = passwordProblem(password, confirm);
+    if (problem) return setCodeError(problem === 'too_short' ? 'pwTooShort' : 'pwMismatch');
     setBusy(true);
-    const v = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' });
-    const u = v.error ? v : await supabase.auth.updateUser({ password });
+    const v = await supabase.auth.verifyOtp({ email: email.trim().toLowerCase(), token: code.trim(), type: 'recovery' });
+    if (v.error) {
+      setBusy(false);
+      return setCodeError(passwordErrorKey(v.error));
+    }
+    const u = await supabase.auth.updateUser({ password });
+    if (u.error) {
+      setBusy(false);
+      return setCodeError(passwordErrorKey(u.error));
+    }
+    await supabase.auth.signOut({ scope: 'global' }).catch(() => {});
     setBusy(false);
-    if (u.error) return showMessage(t('error'), errorText(t, u.error));
-    showMessage(t('resetDone'));
-    router.replace('/');
+    router.replace('/login?reset=1');
   }
 
   return (
     <Screen style={{ maxWidth: 460 }}>
       <Stack.Screen options={{ title: t('resetTitle') }} />
       <Card style={{ gap: 12 }}>
-        <Field label={t('email')} value={email} onChangeText={setEmail} keyboardType="email-address" editable={!sent} />
-        {!sent ? (
-          <Button title={t('resetSendCode')} onPress={send} loading={busy} />
-        ) : (
+        <Text style={{ color: colors.text }}>{t('fpIntro')}</Text>
+        <Field
+          label={t('email')}
+          value={email}
+          onChangeText={(v) => {
+            setEmail(v);
+            setEmailError(null);
+          }}
+          keyboardType="email-address"
+          autoComplete="email"
+          error={emailError}
+          onSubmitEditing={send}
+          testID="fp-email"
+        />
+        {status === 'sent' && (
           <>
-            <Banner text={t('resetCodeSent')} />
-            <Field label={t('resetCode')} value={code} onChangeText={setCode} keyboardType="number-pad" />
-            <Field label={t('newPassword')} placeholder={t('passwordHint')} value={password} onChangeText={setPassword} secureTextEntry />
-            <Button title={t('save')} onPress={reset} loading={busy} />
+            <Banner tone="success" text={t('fpSent')} />
+            <Text style={{ color: colors.muted }}>{t('fpSentHint')}</Text>
           </>
         )}
+        {status === 'rate_limited' && <Banner tone="warning" text={t('fpRateLimited')} />}
+        {status === 'network' && <Banner tone="warning" text={t('e_network')} />}
+        <Button
+          title={wait > 0 ? t('fpResendIn', { s: wait }) : status === 'sent' ? t('fpResend') : t('fpSend')}
+          onPress={send}
+          loading={busy && !showCode}
+          disabled={wait > 0}
+          testID="fp-send"
+        />
       </Card>
+
+      {status === 'sent' && !showCode && (
+        <Button variant="ghost" title={t('fpHaveCode')} onPress={() => setShowCode(true)} testID="fp-have-code" />
+      )}
+      {showCode && (
+        <Card style={{ gap: 12 }}>
+          <Field label={t('resetCode')} value={code} onChangeText={setCode} keyboardType="number-pad" testID="fp-code" />
+          <PasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} onSubmit={resetWithCode} />
+          {codeError && <Banner tone="warning" text={t(codeError)} />}
+          <Button title={t('savePassword')} onPress={resetWithCode} loading={busy} testID="fp-code-save" />
+        </Card>
+      )}
     </Screen>
   );
 }

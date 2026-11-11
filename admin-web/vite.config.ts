@@ -29,7 +29,13 @@ export default defineConfig(({ mode }) => {
         transformIndexHtml: (html) => html.replace('%CSP%', csp),
       },
     ],
-    build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 900 },
+    build: {
+      outDir: 'dist',
+      sourcemap: false,
+      chunkSizeWarningLimit: 900,
+      // Second page: password reset landing page for customers (link in the e-mail).
+      rollupOptions: { input: { main: 'index.html', reset: 'reset-password.html' } },
+    },
     server: { port: 5173 },
   };
 });

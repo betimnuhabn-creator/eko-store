@@ -41,6 +41,11 @@ export const configProblem: 'missing' | 'secret_key' | 'bad_url' | null = (() =>
 
 export const isConfigured = configProblem === null;
 
+/** Web only: the address the page was opened with, captured BEFORE supabase-js
+ *  reads (and removes) a recovery/confirmation fragment from it. */
+export const initialWebUrl: string | null =
+  Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.href : null;
+
 export const supabase = createClient(
   isConfigured ? url : 'https://placeholder.supabase.co',
   isConfigured ? key : 'placeholder',

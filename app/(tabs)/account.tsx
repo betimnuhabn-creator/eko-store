@@ -112,6 +112,10 @@ export default function AccountScreen() {
         <ListItem icon="receipt-outline" title={t('myOrders')} onPress={() => router.push('/orders')} />
       </Card>
 
+      <Card style={{ padding: 0, overflow: 'hidden', gap: 0 }}>
+        <ListItem icon="shield-checkmark-outline" title={t('changePassword')} subtitle={t('security')} onPress={() => router.push('/change-password')} />
+      </Card>
+
       <Card>
         <H2>{t('profileDetails')}</H2>
         <Field label={t('fullName')} value={form.full_name} onChangeText={set('full_name')} autoCapitalize="words" />

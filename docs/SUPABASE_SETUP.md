@@ -126,7 +126,7 @@ delete from auth.users where email like '%@eko-test.invalid';
 ## Going live checklist
 
 - [ ] "Confirm email" back **on**, custom SMTP working
-- [ ] Reset-password template contains `{{ .Token }}`
+- [ ] Password recovery configured (redirect URLs, SMTP, template) — see `docs/PASSWORD_RESET.md`
 - [ ] At least one admin; test users deleted
 - [ ] `dispatch-notifications` deployed, Resend secrets set, Firebase/FCM set up in EAS for Android push
 - [ ] Optional: **Auth → Attack Protection**: enable CAPTCHA / leaked-password protection
