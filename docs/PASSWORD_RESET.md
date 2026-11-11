@@ -72,3 +72,18 @@ Dashboard → project `mfpmcriffqlhlgaptdzx`:
 5. Log in with the new password ✓; the old one is refused ✓.
 6. Tap the same e-mail link again → "Lidhja nuk është më e vlefshme" ✓.
 7. *Llogaria → Ndrysho fjalëkalimin*: wrong current password refused, correct one changes it ✓.
+
+## Troubleshooting: the e-mail link opens "localhost" / "null is unreachable"
+
+Supabase only redirects to `redirect_to` if it is listed in **Redirect URLs**; otherwise it uses
+the **Site URL** (default `http://localhost:3000`). Check without sending any e-mail (read-only,
+invalid token):
+
+```bash
+curl -s -o /dev/null -D - "https://mfpmcriffqlhlgaptdzx.supabase.co/auth/v1/verify?token=x&type=recovery&redirect_to=https%3A%2F%2Fbetimnuhabn-creator.github.io%2Feko-store%2Freset-password.html" | grep -i location
+```
+
+* `location: http://localhost:3000#error=…` → Site URL / Redirect URLs not configured (step 1 above).
+* `location: https://betimnuhabn-creator.github.io/eko-store/reset-password.html#error=…` → correct.
+
+Links sent before the fix keep failing: request a new e-mail.
