@@ -21,6 +21,15 @@ Do **both** A and B. A is the quickest way back; B is a copy you hold yourself a
    * The page says backups are not available on your plan, or the list is empty →
      you have **no** Supabase-managed backup. Do B (required).
 
+### A2. Without any tools (browser only)
+
+1. Table Editor → for each of `products`, `categories`, `profiles`, `orders`, `order_items`,
+   `notifications`: open the table → **Export → Export table as CSV** (or the `…` menu) → save.
+2. Run the snapshot query (section 4, step 2) and save the result (copy it into a text file).
+
+This is a **record** of the data, not a one-click restore. For this migration the tested
+safety net is the rollback SQL (section 2), which never changes existing rows.
+
 ### B. Your own copy with the Supabase CLI (tested locally)
 
 Needs: Node.js, Docker Desktop running, the database password
@@ -171,6 +180,11 @@ select (select count(*) from public.products) products,
 - [ ] 12. APK 1.2.0: log in, catalog prices, cart, place a test order and cancel it; *Ofertat* tab opens (empty).
 - [ ] 13. PC panel: orders, customers, *Ofertat* list (empty), *Njoftimet promocionale* shows OFF + test mode.
 - [ ] 14. If anything in 7–13 is wrong → rollback (section 2).
+
+**Edge Function without the CLI (Dashboard only)**: Edge Functions → `dispatch-notifications`
+→ **Code** → replace everything with the file `supabase/functions/dispatch-notifications/index.ts`
+from GitHub (Raw → copy all) → **Deploy**; in the function's **Details/Settings**, JWT verification
+("Verify JWT" / "Enforce JWT verification") must be **OFF**.
 
 **Later, each only with approval**: Edge Function redeploy (Verify JWT OFF) → save the functions
 address and check "HTTP 200" → Firebase / FCM → test-mode trial with your own test account → real customers.
