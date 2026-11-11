@@ -57,15 +57,18 @@
    (`https://<ref>.supabase.co/functions/v1`) is accepted. Within a minute the panel shows
    **✓ Planifikuesi funksionon (HTTP 200)**; *HTTP 401* means Verify JWT is still ON for
    `dispatch-notifications`. SQL check: `select public.promo_dispatch_status();`
-4. **Android push (Firebase)** — required for notifications on the phone:
-   * console.firebase.google.com → new project → add Android app, package `com.ekoshpk.store`
-     → download `google-services.json`.
-   * expo.dev → project *eko-store* → Environment variables → add **file** variable
-     `GOOGLE_SERVICES_JSON` (environments: preview, production) with that file.
-   * Firebase → Project settings → Service accounts → *Generate new private key* →
-     `npx eas credentials` → Android → Push notifications (FCM V1) → upload the key
-     (or expo.dev → project → Credentials).
-   * Build a new APK.
+4. **Android push (Firebase)** — required for notifications on the phone (browser only):
+   * console.firebase.google.com → **Create a project** (`EKO Store`, Analytics off) →
+     **Add app → Android**, package `com.ekoshpk.store` → **Register app** →
+     **Download google-services.json** (skip the remaining SDK steps).
+   * Firebase → ⚙ **Project settings → Service accounts → Generate new private key** → a JSON
+     key file (SECRET: never e-mail, chat or commit it).
+   * expo.dev → project **eko-store** → **Credentials → Android → com.ekoshpk.store →
+     FCM V1 service account key → Add** → upload that key file.
+   * expo.dev → project **eko-store** → **Environment variables → Add variable**: name
+     `GOOGLE_SERVICES_JSON`, type **File**, environments **preview** and **production**,
+     visibility **Sensitive** → upload `google-services.json`.
+   * Build a new APK (`eas.json` maps the `preview` profile to the `preview` environment).
 5. **iPhone (later)** — Apple Developer account, then `eas build -p ios`; EAS creates the
    push key (APNs). The app is already configured (`ios.bundleIdentifier`, background mode).
 

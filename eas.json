@@ -11,7 +11,8 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://mfpmcriffqlhlgaptdzx.supabase.co",
         "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_aPcfjJUsvod3KCY-hTa41Q_lA-1Vwci"
-      }
+      },
+      "environment": "preview"
     },
     "production": {
       "android": {
@@ -20,7 +21,8 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://mfpmcriffqlhlgaptdzx.supabase.co",
         "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_aPcfjJUsvod3KCY-hTa41Q_lA-1Vwci"
-      }
+      },
+      "environment": "production"
     }
   },
   "submit": {
