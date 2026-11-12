@@ -1,3 +1,4 @@
+import { RegisterConsent } from '../components/LegalLinks';
 import { router, Stack } from 'expo-router';
 import React, { useState } from 'react';
 import { Banner, Button, Card, Checkbox, Field, Screen } from '../components/ui';
@@ -79,6 +80,7 @@ export default function RegisterScreen() {
           </>
         )}
         <Button title={t('register')} onPress={submit} loading={busy} testID="register-submit" />
+        <RegisterConsent />
       </Card>
       <Button variant="secondary" title={t('haveAccount')} onPress={() => router.replace('/login')} />
     </Screen>

@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 import { AuthHeader } from '../../components/AuthHeader';
+import { PRIVACY_URL, TERMS_URL, openLegal } from '../../lib/legal';
 import { PromoPrefsCard } from '../../components/PromoPrefsCard';
 import { Badge, Banner, Button, Card, Chip, Field, H2, ListItem, Muted, Row, Screen } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
@@ -114,6 +115,8 @@ export default function AccountScreen() {
 
       <Card style={{ padding: 0, overflow: 'hidden', gap: 0 }}>
         <ListItem icon="shield-checkmark-outline" title={t('changePassword')} subtitle={t('security')} onPress={() => router.push('/change-password')} />
+        <ListItem icon="document-lock-outline" title={t('privacyPolicy')} onPress={() => openLegal(PRIVACY_URL)} />
+        <ListItem icon="document-text-outline" title={t('termsOfService')} onPress={() => openLegal(TERMS_URL)} />
       </Card>
 
       <Card>

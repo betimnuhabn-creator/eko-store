@@ -6,6 +6,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 grep -vE '^[[:space:]]*#' .env.production | grep -qE 'sb_secret_|service_role' && { echo "Secret key in .env.production — aborting"; exit 1; }
 npm run build
+# Public legal pages must carry a real contact e-mail (VITE_CONTACT_EMAIL in .env.production).
+if grep -l 'KONTAKTI-MUNGON' dist/*.html >/dev/null 2>&1; then
+  echo "VITE_CONTACT_EMAIL is missing in .env.production: legal pages would have no contact — aborting"; exit 1
+fi
 touch dist/.nojekyll
 REPO_ROOT=$(git rev-parse --show-toplevel)
 TMP=$(mktemp -d)

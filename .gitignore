@@ -21,3 +21,4 @@ GoogleService-Info.plist
 /*.sql
 *.dump
 eko-backup-*/
+admin-web/dist-legal/
