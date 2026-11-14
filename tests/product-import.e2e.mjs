@@ -123,6 +123,7 @@ test('import with photos: preview with errors, create/update by SKU, several pho
   assert.match(await errorsOf('NEW-H'), /Çmim i pavlefshëm/);
   await pg.getByTestId('import-filter-all').click();
   assert.match(await pg.getByTestId('import-row-NEW-I').locator('.warn-list').innerText(), /shumicës është më i lartë/);
+  await pg.getByTestId('import-row-NEW-A').first().locator('img.thumb').waitFor({ timeout: 10000 });   // photo preview from the ZIP (made asynchronously)
   assert.equal(await pg.getByTestId('import-row-NEW-A').first().locator('img.thumb').count(), 1, 'photo preview from the ZIP');
 
   const rep = await startAndWait(pg);
