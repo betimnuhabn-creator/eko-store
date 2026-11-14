@@ -8,7 +8,14 @@ grep -vE '^[[:space:]]*#' .env.production | grep -qE 'sb_secret_|service_role' &
 npm run build
 # Public legal pages must carry a real contact e-mail (VITE_CONTACT_EMAIL in .env.production).
 if grep -l 'KONTAKTI-MUNGON' dist/*.html >/dev/null 2>&1; then
-  echo "VITE_CONTACT_EMAIL is missing in .env.production: legal pages would have no contact — aborting"; exit 1
+  if [[ "${EKO_SKIP_LEGAL:-}" == 1 ]]; then
+    # Publish the panel only; the legal pages wait until the contact e-mail is set.
+    rm -f dist/privacy.html dist/terms.html dist/delete-account.html dist/assets/legal-*.css
+    echo "Legal pages left out (EKO_SKIP_LEGAL=1, VITE_CONTACT_EMAIL not set)"
+  else
+    echo "VITE_CONTACT_EMAIL is missing in .env.production: legal pages would have no contact — aborting"
+    echo "(EKO_SKIP_LEGAL=1 publishes the panel without the legal pages)"; exit 1
+  fi
 fi
 touch dist/.nojekyll
 REPO_ROOT=$(git rev-parse --show-toplevel)
