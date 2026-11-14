@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { DeleteCustomerModal } from '../components/DeleteCustomerModal';
 import { PasswordModal } from '../components/PasswordModal';
 import { Badge, Empty, Pager, Spinner, usePaging, useConfirm, useToast } from '../components/ui';
 import { useNotifications } from '../lib/data';
@@ -26,6 +27,7 @@ export function Customers() {
   // "Fjalëkalimi" only for the main administrator (decided by the server).
   const [pwdAdmin, setPwdAdmin] = useState(false);
   const [pwdFor, setPwdFor] = useState<Profile | null>(null);
+  const [delFor, setDelFor] = useState<Profile | null>(null);
   useEffect(() => {
     canManagePasswords().then(setPwdAdmin);
   }, []);
@@ -203,6 +205,14 @@ export function Customers() {
                           </button>
                         </>
                       )}
+                      {p.role !== 'admin' && (
+                        <>
+                          {' '}
+                          <button className="btn btn-sm btn-danger-outline" onClick={() => setDelFor(p)} data-testid={`delete-${p.email}`}>
+                            🗑 {t('delButton')}
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -213,6 +223,18 @@ export function Customers() {
         <Pager {...paging} total={list.length} />
       </div>
       {pwdFor && <PasswordModal key={pwdFor.id} customer={pwdFor} onClose={() => setPwdFor(null)} />}
+      {delFor && (
+        <DeleteCustomerModal
+          key={delFor.id}
+          customer={delFor}
+          onClose={() => setDelFor(null)}
+          onDeleted={() => {
+            setDelFor(null);
+            toast(t('delDone'));
+            load();
+          }}
+        />
+      )}
     </>
   );
 }

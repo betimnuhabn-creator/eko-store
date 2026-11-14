@@ -196,15 +196,17 @@ export function ListItem({
   right,
   onPress,
   icon,
+  testID,
 }: {
   title: string;
   subtitle?: string;
   right?: React.ReactNode;
   onPress?: () => void;
   icon?: keyof typeof Ionicons.glyphMap;
+  testID?: string;
 }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [s.listItem, pressed && onPress && { backgroundColor: '#F8FAFC' }]}>
+    <Pressable onPress={onPress} testID={testID} style={({ pressed }) => [s.listItem, pressed && onPress && { backgroundColor: '#F8FAFC' }]}>
       {icon && <Ionicons name={icon} size={22} color={colors.brand} />}
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={{ fontWeight: '600', color: colors.text, fontSize: 15 }}>{title}</Text>

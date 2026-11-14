@@ -6,7 +6,7 @@ import { PRIVACY_URL, TERMS_URL, openLegal } from '../../lib/legal';
 import { PromoPrefsCard } from '../../components/PromoPrefsCard';
 import { Badge, Banner, Button, Card, Chip, Field, H2, ListItem, Muted, Row, Screen } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
-import { confirmAction, showMessage } from '../../lib/dialog';
+import { showMessage } from '../../lib/dialog';
 import { errorText, TKey, useI18n } from '../../lib/i18n';
 import { useNotifications } from '../../lib/notifications';
 import { dispatchNotifications, supabase } from '../../lib/supabase';
@@ -80,15 +80,6 @@ export default function AccountScreen() {
     showMessage(t('wholesaleRequested'));
   }
 
-  async function deleteAccount() {
-    if (!(await confirmAction(t('deleteAccount'), t('deleteAccountConfirm'), t('delete'), t('cancel')))) return;
-    const { error } = await supabase.rpc('delete_my_account');
-    if (error) return showMessage(t('error'), errorText(t, error));
-    await signOut();
-    showMessage(t('accountDeleted'));
-    router.replace('/');
-  }
-
   const canRequest = profile && accountKind(profile) === 'retail' && profile.wholesale_status !== 'pending';
 
   return (
@@ -117,6 +108,9 @@ export default function AccountScreen() {
         <ListItem icon="shield-checkmark-outline" title={t('changePassword')} subtitle={t('security')} onPress={() => router.push('/change-password')} />
         <ListItem icon="document-lock-outline" title={t('privacyPolicy')} onPress={() => openLegal(PRIVACY_URL)} />
         <ListItem icon="document-text-outline" title={t('termsOfService')} onPress={() => openLegal(TERMS_URL)} />
+        {profile?.role !== 'admin' && (
+          <ListItem icon="trash-outline" title={t('deleteMyAccount')} onPress={() => router.push('/delete-account')} testID="delete-my-account" />
+        )}
       </Card>
 
       <Card>
@@ -151,7 +145,7 @@ export default function AccountScreen() {
 
       <Button variant="secondary" icon="log-out-outline" title={t('logout')} onPress={signOut} testID="logout" />
       {profile?.role !== 'admin' && (
-        <Button variant="ghost" icon="trash-outline" title={t('deleteAccount')} onPress={deleteAccount} style={{ alignSelf: 'center' }} />
+        <Button variant="ghost" icon="trash-outline" title={t('deleteAccount')} onPress={() => router.push('/delete-account')} style={{ alignSelf: 'center' }} />
       )}
     </Screen>
   );

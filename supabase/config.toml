@@ -427,3 +427,8 @@ verify_jwt = false
 # caller's session itself (and the main-admin list + re-authentication).
 [functions.admin-set-password]
 verify_jwt = false
+
+# Customer account deletion (app, public page, PC panel). The function checks
+# the session itself via Supabase Auth (see index.ts), like admin-set-password.
+[functions.delete-account]
+verify_jwt = false
