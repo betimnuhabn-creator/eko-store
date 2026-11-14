@@ -20,7 +20,7 @@ const EKO_DEFINER_FUNCTIONS = [
   'price_tier', 'process_offer_activations', 'products_promo_trigger', 'promo_fanout', 'promo_queue_new_product',
   'promo_queue_price', 'register_push_token', 'request_wholesale', 'set_my_promo_preferences', 'unregister_push_token',
   'update_my_profile',
-].concat(['best_offer', 'promo_dispatch', 'promo_dispatch_status', 'record_admin_password_change', 'clear_must_change_password']).sort();
+].concat(['best_offer', 'promo_dispatch', 'promo_dispatch_status', 'record_admin_password_change', 'clear_must_change_password', 'admin_import_products']).sort();
 const AUTHENTICATED_EXEC = [
   'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
   'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
@@ -29,7 +29,7 @@ const AUTHENTICATED_EXEC = [
   'admin_save_product', 'admin_set_order_status', 'admin_stats', 'cancel_my_order', 'delete_my_account',
   'is_admin', 'list_products', 'mark_notifications_read', 'place_order', 'register_push_token',
   'request_wholesale', 'unregister_push_token', 'update_my_profile',
-  'list_offers', 'set_my_promo_preferences',
+  'list_offers', 'set_my_promo_preferences', 'admin_import_products',
 ].sort();
 
 describe('database catalog audit', () => {
@@ -120,7 +120,7 @@ describe('database catalog audit', () => {
     for (const f of ['admin_archive_order', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
       'admin_restore_order', 'admin_review_wholesale', 'admin_save_category', 'admin_save_product', 'admin_set_order_status', 'admin_stats',
       'admin_cancel_offer', 'admin_get_promo_settings', 'admin_list_offers', 'admin_save_offer', 'admin_set_offer_active',
-      'admin_set_promo_settings', 'admin_set_promo_tester']) {
+      'admin_set_promo_settings', 'admin_set_promo_tester', 'admin_import_products']) {
       const src = sql(`select prosrc from pg_proc where proname='${f}'`);
       const first = src.split('\n').map((l) => l.trim()).find((l) => l && l !== 'begin' && !l.startsWith('declare'));
       assert.match(src, /perform public\.assert_admin\(\);/, f);
@@ -290,6 +290,7 @@ describe('unauthorized access', () => {
       ['admin_cancel_order', { p_order: '00000000-0000-0000-0000-000000000000', p_note: null }],
       ['admin_archive_order', { p_order: '00000000-0000-0000-0000-000000000000' }],
       ['admin_restore_order', { p_order: '00000000-0000-0000-0000-000000000000' }],
+      ['admin_import_products', { p_rows: [{ row: 2, sku: 'X-1', name: 'x', retail_price: 1, wholesale_price: 1 }] }],
     ];
     for (const [fn, args] of calls) await denied(a.c.rpc(fn, args), /ADMIN_ONLY/);
   });

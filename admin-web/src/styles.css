@@ -178,6 +178,12 @@ label.check { flex-direction: row !important; align-items: center; gap: 8px; fon
 .modal-backdrop { position: fixed; inset: 0; background: rgba(15, 30, 45, 0.45); display: grid; place-items: center; z-index: 50; padding: 16px; }
 .modal { background: #fff; border-radius: 12px; padding: 18px; width: 100%; max-width: 720px; max-height: 90vh; overflow: auto; }
 .modal-small { max-width: 440px; }
+.modal-wide { max-width: 1180px; }
+.progress { height: 10px; background: #edf2f7; border-radius: 999px; overflow: hidden; }
+.progress > div { height: 100%; background: var(--brand); transition: width .2s; }
+.import-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.err-list { margin: 2px 0 0; padding-left: 16px; color: var(--bad); font-size: 12px; }
+.warn-list { margin: 2px 0 0; padding-left: 16px; color: var(--warn); font-size: 12px; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
 .toast { padding: 10px 14px; border-radius: 8px; color: #fff; background: var(--ok); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); max-width: 420px; }

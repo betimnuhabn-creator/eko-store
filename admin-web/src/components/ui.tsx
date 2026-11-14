@@ -66,7 +66,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 export const useConfirm = () => useContext(ConfirmCtx);
 
 // ---------------------------------------------------------------- modal
-export function Modal({ title, children, onClose, small }: { title: string; children: ReactNode; onClose: () => void; small?: boolean }) {
+export function Modal({ title, children, onClose, small, wide }: { title: string; children: ReactNode; onClose: () => void; small?: boolean; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -75,7 +75,7 @@ export function Modal({ title, children, onClose, small }: { title: string; chil
   }, [onClose]);
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${small ? 'modal-small' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
+      <div className={`modal ${small ? 'modal-small' : ''} ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <div className="modal-head">
           <h2>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="close">

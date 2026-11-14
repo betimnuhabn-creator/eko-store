@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ProductImport } from '../components/ProductImport';
 import { Badge, Empty, Pager, Spinner, Thumb, usePaging, useToast } from '../components/ui';
+import { downloadTemplate, exportProducts } from '../lib/productExcel';
 import { useCatalog } from '../lib/data';
 import { downloadCsv, normalize, parseNumber } from '../lib/format';
 import { errorText, useI18n } from '../lib/i18n';
@@ -19,6 +21,7 @@ export function Products() {
   const [q, setQ] = useState('');
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'updated_at', dir: -1 });
   const category = params.get('category') ?? '';
   const state = params.get('state') ?? '';
@@ -117,6 +120,15 @@ export function Products() {
       <div className="page-head">
         <h1>{t('products')}</h1>
         <div className="row">
+          <button className="btn" onClick={() => downloadTemplate(categories)} data-testid="excel-template">
+            {t('impTemplate')}
+          </button>
+          <button className="btn" onClick={() => exportProducts(products, categories)} disabled={!products.length} data-testid="excel-export">
+            {t('impExport')}
+          </button>
+          <button className="btn" onClick={() => setImporting(true)} data-testid="excel-import">
+            {t('impImport')}
+          </button>
           <button className="btn" onClick={exportCsv}>
             {t('exportCsv')}
           </button>
@@ -228,6 +240,7 @@ export function Products() {
         )}
         <Pager {...paging} total={rows.length} />
       </div>
+      {importing && <ProductImport onClose={() => setImporting(false)} />}
     </>
   );
 }
