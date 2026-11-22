@@ -1,6 +1,6 @@
 # EKO Store — Google Play release checklist
 
-App: **EKO Store**, package **`com.ekoshpk.store`**, version **1.3.0 (versionCode 8)**.
+App: **EKO Store**, package **`com.ekoshpk.store`**, version **1.3.1 (versionCode 9)**.
 Builds: `eas build -p android --profile production` → **AAB** for Google Play;
 `--profile preview` → **APK** for testing on phones. Both use the production Supabase project and
 the Firebase file from the EAS environment (`GOOGLE_SERVICES_JSON`), and are signed with the same
