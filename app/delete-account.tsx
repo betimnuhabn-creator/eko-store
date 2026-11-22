@@ -5,6 +5,7 @@ import { Banner, Button, Card, Field, Screen } from '../components/ui';
 import { useAuth } from '../lib/auth';
 import { confirmAction, showMessage } from '../lib/dialog';
 import { TKey, useI18n } from '../lib/i18n';
+import { callDeleteAccount } from '../lib/deleteAccount';
 import { supabase } from '../lib/supabase';
 import { colors } from '../lib/theme';
 
@@ -46,20 +47,14 @@ export default function DeleteAccountScreen() {
     if (!password) return setError('reauth_failed');
     if (!(await confirmAction(t('deleteMyAccount'), t('delAccFinal'), t('delete'), t('cancel')))) return;
     setBusy(true);
-    let code: ErrKey | null = null;
-    try {
-      const { data, error: e } = await supabase.functions.invoke('delete-account', { body: { action: 'self', password } });
-      if (e) {
-        const ctx = (e as any).context as Response | undefined;
-        if (ctx && typeof ctx.status === 'number') {
-          const body = await ctx.json().catch(() => ({}));
-          const c = String(body?.error ?? '');
-          code = c === 'reauth_failed' || c === 'admin_cannot_delete' ? c : ctx.status === 404 && c !== 'not_found' ? 'unavailable' : 'failed';
-        } else code = (e as any).name === 'FunctionsFetchError' ? 'network' : 'unavailable';
-      } else if (!data?.ok) code = 'failed';
-    } catch {
-      code = 'network';
-    }
+    const r = await callDeleteAccount({ action: 'self', password });
+    const code: ErrKey | null = r.error
+      ? r.error === 'reauth_failed' || r.error === 'admin_cannot_delete' || r.error === 'network' || r.error === 'unavailable'
+        ? r.error
+        : 'failed'
+      : r.data?.ok
+        ? null
+        : 'failed';
     setBusy(false);
     setPassword('');
     if (code) return setError(code);

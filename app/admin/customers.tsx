@@ -1,4 +1,4 @@
-import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Linking, Text, View } from 'react-native';
 import { AdminOnly } from '../../components/AdminOnly';
@@ -109,6 +109,14 @@ function Customers() {
               <Button small variant="secondary" icon="remove-circle-outline" title={t('revokeWholesale')} onPress={() => review(p, false)} disabled={busyId === p.id} />
             )}
             {!!p.phone && <Button small variant="ghost" icon="call-outline" title={t('call')} onPress={() => Linking.openURL(`tel:${p.phone}`)} />}
+            <Button
+              small
+              variant="ghost"
+              icon="trash-outline"
+              title={t('delCustButton')}
+              onPress={() => router.push({ pathname: '/admin/delete-customer', params: { id: p.id } })}
+              testID={`delete-${p.email}`}
+            />
           </View>
         </Card>
       ))}

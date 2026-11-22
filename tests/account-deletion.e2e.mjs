@@ -174,3 +174,39 @@ test('public page delete-account.html: deletion outside the app; administrators 
   assert.deepEqual(errors, []);
   await pg.context().close();
 });
+
+test('Android admin: Admin → Klientët → Fshi klientin (name, e-mail, orders, admin password)', async () => {
+  const u = await signUp('dele-andr', { full_name: 'Klient Android' });
+  await withOrders(u, 1);
+  const pg = await page(true);
+  const dialogs = [];
+  pg.on('dialog', (d) => dialogs.push(d.message()));
+  await pg.goto(`${APP}/login`);
+  await pg.getByTestId('email').fill(admin.email);
+  await pg.getByTestId('password').fill('secret123');
+  await pg.getByTestId('login-submit').click();
+  await pg.waitForURL((x) => !x.pathname.startsWith('/login'));
+  await pg.goto(`${APP}/admin/customers`);
+  await pg.getByTestId(`delete-${u.email}`).click();
+  await pg.getByTestId('del-cust-name').getByText('Klient Android').waitFor();
+  await pg.getByText(u.email, { exact: true }).last().waitFor();
+  assert.equal(await pg.getByTestId('del-cust-orders').innerText(), 'Porosi: 1 (1 të hapura)');
+  await pg.getByText('Porositë NUK fshihen', { exact: false }).waitFor();
+  // Wrong administrator password: nothing deleted.
+  await pg.getByTestId('del-cust-password').fill('gabim-gabim');
+  await pg.getByTestId('del-cust-confirm').click();
+  await pg.getByText('Fjalëkalimi juaj i administratorit nuk është i saktë.').waitFor();
+  assert.equal(inAuth(u.id), 1);
+  await pg.getByTestId('del-cust-password').fill('secret123');
+  await pg.getByTestId('del-cust-confirm').click();
+  for (let i = 0; i < 50 && !dialogs.includes('Klienti u fshi. Porositë e tij u ruajtën.'); i++) await pg.waitForTimeout(200);
+  assert.ok(dialogs.includes('A jeni i sigurt që dëshironi ta fshini këtë klient?') || dialogs.some((m) => m.includes('A jeni i sigurt')), 'confirmation asked');
+  assert.ok(dialogs.includes('Klienti u fshi. Porositë e tij u ruajtën.'), dialogs.join(' | '));
+  assert.equal(inAuth(u.id), 0, 'gone from Supabase Authentication');
+  assert.equal(await canLogin(u.email), false);
+  await pg.goto(`${APP}/admin/customers`);
+  await pg.getByTestId(`delete-${admin.email}`).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+  assert.equal(await pg.getByTestId(`delete-${u.email}`).count(), 0, 'no longer listed');
+  assert.equal(await pg.getByTestId(`delete-${admin.email}`).count(), 0, 'administrators are not listed');
+  await pg.context().close();
+});
