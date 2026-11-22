@@ -10,7 +10,7 @@ npm run build
 if grep -l 'KONTAKTI-MUNGON' dist/*.html >/dev/null 2>&1; then
   if [[ "${EKO_SKIP_LEGAL:-}" == 1 ]]; then
     # Publish the panel only; the legal pages wait until the contact e-mail is set.
-    rm -f dist/privacy.html dist/terms.html dist/delete-account.html dist/assets/legal-*.css
+    rm -f dist/privacy.html dist/terms.html dist/delete-account.html dist/assets/legal-*.css dist/assets/deleteAccount-*.js
     echo "Legal pages left out (EKO_SKIP_LEGAL=1, VITE_CONTACT_EMAIL not set)"
   else
     echo "VITE_CONTACT_EMAIL is missing in .env.production: legal pages would have no contact — aborting"
