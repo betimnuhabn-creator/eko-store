@@ -41,7 +41,8 @@ before(async () => {
   tester = await signUp('promo-tester');
   testerWhole = await signUp('promo-tester-ws', { requested_wholesale: true, business_name: 'Tester Shumice' });
   ok(await admin.c.rpc('admin_review_wholesale', { p_user: testerWhole.id, p_approve: true }));
-  quiet = await signUp('promo-quiet'); // opted out
+  quiet = await signUp('promo-quiet'); // opted out (switched everything off)
+  ok(await quiet.c.rpc('set_my_promo_preferences', { p_new_products: false, p_offers: false, p_price_changes: false }));
   noToken = await signUp('promo-notoken'); // opted in but never allowed push
   for (const u of [retail, whole, tester, testerWhole, noToken]) {
     ok(await u.c.rpc('set_my_promo_preferences', { p_new_products: true, p_offers: true, p_price_changes: true }));

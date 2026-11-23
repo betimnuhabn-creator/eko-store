@@ -210,8 +210,11 @@ test('Promotions: PC settings in test mode, tester flag, price drop reaches only
   await app.context().close();
 });
 
-test('customer can opt in from the Offers tab and set preferences in Account', async () => {
+test('new customers have promotional notifications ON; switched off → the Offers tab asks again; Account toggles', async () => {
   const u = await signUp('e2e-optin');
+  const fresh = ok(await service.from('profiles').select('promo_new_products,promo_offers,promo_price_changes').eq('id', u.id).single());
+  assert.deepEqual(fresh, { promo_new_products: true, promo_offers: true, promo_price_changes: true }, 'ON by default');
+  ok(await u.c.rpc('set_my_promo_preferences', { p_new_products: false, p_offers: false, p_price_changes: false }));
   const app = await page({ mobile: true });
   await appLogin(app, u.email);
   await app.goto(`${APP}/offers`);

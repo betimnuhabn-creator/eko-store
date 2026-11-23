@@ -413,6 +413,7 @@ describe('offers + promotional notifications: abuse attempts', () => {
   });
 
   test('customers cannot make themselves promo testers or change other people\'s preferences', async () => {
+    ok(await cust.c.rpc('set_my_promo_preferences', { p_new_products: false, p_offers: false, p_price_changes: false }));
     ok(await cust.c.rpc('update_my_profile', { p: { promo_tester: true, promo_offers: true } }));
     await denied(cust.c.from('profiles').update({ promo_tester: true }).eq('id', cust.id));
     ok(await cust.c.rpc('set_my_promo_preferences', { p_new_products: true, p_offers: null, p_price_changes: null }));
