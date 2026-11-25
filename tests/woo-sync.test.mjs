@@ -147,6 +147,15 @@ describe('products: website → app', () => {
     assert.equal(r.json.result.created, 0);
   });
 
+  test('hosting firewall refusing a burst (HTTP 403): the sync waits, tries again and succeeds', async () => {
+    woo.state.refuse403 = 2;
+    const t0 = Date.now();
+    const r = await call({ action: 'sync' }, { token: admin.token });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.equal(woo.state.refuse403, 0);
+    assert.ok(Date.now() - t0 >= 2000, 'waited before trying again');
+  });
+
   test('keys travel in the Authorization header, never in the URL', async () => {
     // locally the site is http, so only the header is used: the switch is checked on the request log
     const before = woo.state.requests.length;

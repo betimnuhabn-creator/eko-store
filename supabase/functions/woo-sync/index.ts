@@ -71,12 +71,24 @@ function wooConfigured(): boolean {
 }
 
 let useQueryAuth = false;   // some hosts drop the Authorization header → keys as query parameters (HTTPS only)
-async function woo(path: string, init: RequestInit = {}): Promise<{ status: number; data: any; total_pages: number }> {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+let lastCall = 0;
+// Website firewalls (e.g. Bluehost) refuse bursts of requests with 403/429:
+// at most ~3 requests per second, and a refused request is tried again later.
+const GAP_MS = 350;
+const RETRY_MS = [2000, 5000, 10000, 20000];
+
+async function woo(path: string, init: RequestInit = {}): Promise<{ status: number; data: any; total_pages: number; reason: string }> {
   const ck = Deno.env.get('WOO_CONSUMER_KEY') ?? '';
   const cs = Deno.env.get('WOO_CONSUMER_SECRET') ?? '';
   const call = async (query: boolean) => {
+    const wait = lastCall + GAP_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastCall = Date.now();
     const url = new URL(`${WOO}/wp-json/wc/v3/${path}`);
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'EKO-Store-App-Sync/1.0',
+    };
     if (query) {
       url.searchParams.set('consumer_key', ck);
       url.searchParams.set('consumer_secret', cs);
@@ -84,13 +96,24 @@ async function woo(path: string, init: RequestInit = {}): Promise<{ status: numb
       headers.Authorization = `Basic ${btoa(`${ck}:${cs}`)}`;
     }
     const res = await fetch(url, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> ?? {}) } });
-    const data = await res.json().catch(() => null);
-    return { status: res.status, data, total_pages: Number(res.headers.get('x-wp-totalpages') ?? '1') || 1 };
+    const text = await res.text();
+    let data: any = null;
+    try { data = JSON.parse(text); } catch { /* firewall pages are HTML */ }
+    const reason = data?.code ? String(data.code)
+      : text.trim().startsWith('<') ? `html:${(text.match(/<title>([^<]{0,80})/i)?.[1] ?? '').trim() || 'page'}`
+      : text.slice(0, 80);
+    return { status: res.status, data, total_pages: Number(res.headers.get('x-wp-totalpages') ?? '1') || 1, reason };
   };
   let r = await call(useQueryAuth);
   if (!useQueryAuth && r.status === 401 && WOO.startsWith('https://')) {
     r = await call(true);
     if (r.status !== 401) useQueryAuth = true;
+  }
+  for (const delay of RETRY_MS) {
+    if (r.status !== 403 && r.status !== 429 && r.status !== 503) break;
+    console.warn('woo-sync', `${path.split('?')[0]}: HTTP ${r.status} ${r.reason} → retry in ${delay / 1000}s`);
+    await sleep(delay);
+    r = await call(useQueryAuth);
   }
   return r;
 }
@@ -100,7 +123,7 @@ async function wooAll(path: string): Promise<any[]> {
   for (let page = 1; page <= 50; page++) {
     const sep = path.includes('?') ? '&' : '?';
     const r = await woo(`${path}${sep}per_page=100&page=${page}`);
-    if (r.status !== 200 || !Array.isArray(r.data)) throw new Error(`WooCommerce ${path}: HTTP ${r.status} ${r.data?.code ?? ''}`.trim());
+    if (r.status !== 200 || !Array.isArray(r.data)) throw new Error(`WooCommerce ${path}: HTTP ${r.status} ${r.reason}`.trim());
     out.push(...r.data);
     if (page >= r.total_pages || r.data.length < 100) break;
   }
@@ -220,7 +243,7 @@ async function fullSync(notify: boolean): Promise<Json> {
 async function syncOne(id: number): Promise<Json> {
   const r = await woo(`products/${id}`);
   if (r.status === 404 || r.data?.status === 'trash') return { hidden: await rpc('woo_hide_product', { p_woo_id: id }) };
-  if (r.status !== 200) throw new Error(`WooCommerce products/${id}: HTTP ${r.status}`);
+  if (r.status !== 200) throw new Error(`WooCommerce products/${id}: HTTP ${r.status} ${r.reason}`.trim());
   const p = r.data;
   if (p.type === 'variation' && p.parent_id) return syncOne(p.parent_id);
   const cats = await categories();

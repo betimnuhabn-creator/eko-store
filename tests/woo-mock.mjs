@@ -50,7 +50,7 @@ export function catalogue() {
 
 /** Starts the fake API. `state.requests` records every call; options change its behaviour. */
 export function startWooMock(port = 8099) {
-  const state = { ...catalogue(), requests: [], orders: [], nextOrder: 5001, rejectHeaderAuth: false, failOrders: 0,
+  const state = { ...catalogue(), requests: [], orders: [], nextOrder: 5001, rejectHeaderAuth: false, failOrders: 0, refuse403: 0,
     customers: [{ id: 77, email: 'known@test.local' }] };
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -66,6 +66,11 @@ export function startWooMock(port = 8099) {
         res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
         res.end(JSON.stringify(data));
       };
+      if (state.refuse403 > 0) {   // like a hosting firewall refusing a burst
+        state.refuse403--;
+        res.writeHead(403, { 'Content-Type': 'text/html' });
+        return res.end('<html><head><title>403 Forbidden</title></head><body>Blocked</body></html>');
+      }
       if (!headerOk && !queryOk) return send(401, { code: 'woocommerce_rest_cannot_view' });
       const page = Number(url.searchParams.get('page') ?? '1');
       const list = (arr) => send(200, page === 1 ? arr : [], { 'X-WP-TotalPages': '1' });
