@@ -15,7 +15,11 @@ export function discountPercent(regular?: number | null, offer?: number | null) 
 /** Price as the logged-in customer pays it (offer price + struck regular price + discount). */
 export function PriceTag({ product, size = 18 }: { product: Product; size?: number }) {
   const { t } = useI18n();
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
+  if (product.price == null && session) {
+    // logged in but no price for this customer (e.g. no retail price on the website yet)
+    return <Text style={{ color: colors.muted, fontWeight: '700', fontSize: 13 }}>{t('priceOnRequest')}</Text>;
+  }
   if (product.price == null) {
     return (
       <Text onPress={() => router.push('/login')} style={{ color: colors.brand, fontWeight: '700', fontSize: 13 }}>

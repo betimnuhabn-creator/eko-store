@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ProductImport } from '../components/ProductImport';
+import { WooSyncCard } from '../components/WooSyncCard';
+import { useWooProductIds } from '../lib/woo';
 import { Badge, Empty, Pager, Spinner, Thumb, usePaging, useToast } from '../components/ui';
 import { downloadTemplate, exportProducts } from '../lib/productExcel';
 import { useCatalog } from '../lib/data';
@@ -22,6 +24,8 @@ export function Products() {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [wooVersion, setWooVersion] = useState(0);
+  const wooIds = useWooProductIds(wooVersion);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'updated_at', dir: -1 });
   const category = params.get('category') ?? '';
   const state = params.get('state') ?? '';
@@ -137,6 +141,7 @@ export function Products() {
           </button>
         </div>
       </div>
+      <WooSyncCard onSynced={() => setWooVersion((v) => v + 1)} />
       <div className="card">
         <div className="filters">
           <input className="search" placeholder={t('search')} value={q} onChange={(e) => setQ(e.target.value)} data-testid="product-search" />
@@ -207,6 +212,12 @@ export function Products() {
                       <td data-label={t('sku')} className="mono">{p.sku}</td>
                       <td data-label={t('name')}>
                         <Link to={`/products/${p.id}`}>{pick(p.name, p.name_en)}</Link>
+                        {wooIds.has(p.id) && (
+                          <>
+                            {' '}
+                            <Badge>{t('woo_from_site')}</Badge>
+                          </>
+                        )}
                       </td>
                       <td data-label={t('category')}>{catName(p.category_id)}</td>
                       <td data-label={t('retail')} className="num">

@@ -432,3 +432,8 @@ verify_jwt = false
 # the session itself via Supabase Auth (see index.ts), like admin-set-password.
 [functions.delete-account]
 verify_jwt = false
+
+# WooCommerce sync (website → app). Webhooks carry no Supabase JWT; the
+# function checks the WooCommerce signature / admin session itself.
+[functions.woo-sync]
+verify_jwt = false

@@ -5,6 +5,7 @@ import { PriceTag } from '../../components/PriceTag';
 import { ProductImage } from '../../components/ProductImage';
 import { Button, Card, Empty, H1, Loading, Muted, QuantityStepper, Row, Screen } from '../../components/ui';
 import { formatBelgrade } from '../../lib/belgrade';
+import { useAuth } from '../../lib/auth';
 import { useCart } from '../../lib/cart';
 import { useCatalog } from '../../lib/catalog';
 import { showMessage } from '../../lib/dialog';
@@ -15,6 +16,7 @@ import { colors } from '../../lib/theme';
 export default function ProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, pick } = useI18n();
+  const { session } = useAuth();
   const { byId, categories, loading } = useCatalog();
   const { add } = useCart();
   const { width } = useWindowDimensions();
@@ -65,6 +67,7 @@ export default function ProductScreen() {
               title={t('addToCart')}
               style={{ flex: 1 }}
               testID="add-to-cart"
+              disabled={!!session && p.price == null}
               onPress={() => {
                 add(p.id, qty);
                 showMessage(t('addedToCart'));

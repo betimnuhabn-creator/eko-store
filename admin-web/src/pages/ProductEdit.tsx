@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useWooProductIds } from '../lib/woo';
 import { Empty, Spinner, Thumb, useConfirm, useToast } from '../components/ui';
 import { useCatalog } from '../lib/data';
 import { parseNumber } from '../lib/format';
@@ -28,6 +29,7 @@ const blank: Form = {
 
 export function ProductEdit() {
   const { id = 'new' } = useParams();
+  const wooIds = useWooProductIds();
   const isNew = id === 'new';
   const { t, pick } = useI18n();
   const toast = useToast();
@@ -173,6 +175,11 @@ export function ProductEdit() {
 
   return (
     <form onSubmit={submit}>
+      {wooIds.has(id) && (
+        <div className="alert alert-warn" data-testid="woo-edit-note">
+          {t('woo_edit_note')}
+        </div>
+      )}
       <div className="page-head">
         <h1>
           <Link to="/products" className="muted">

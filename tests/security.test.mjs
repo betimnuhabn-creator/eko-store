@@ -8,7 +8,7 @@ import {
 } from './helpers.mjs';
 
 const EKO_TABLES = ['profiles', 'categories', 'products', 'orders', 'order_items', 'notifications', 'push_tokens',
-  'offers', 'offer_items', 'promo_events', 'promo_settings', 'password_reset_audit', 'account_deletion_audit'];
+  'offers', 'offer_items', 'promo_events', 'promo_settings', 'password_reset_audit', 'account_deletion_audit', 'woo_settings', 'woo_order_jobs'];
 const EKO_DEFINER_FUNCTIONS = [
   'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
   'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
@@ -20,7 +20,9 @@ const EKO_DEFINER_FUNCTIONS = [
   'price_tier', 'process_offer_activations', 'products_promo_trigger', 'promo_fanout', 'promo_queue_new_product',
   'promo_queue_price', 'register_push_token', 'request_wholesale', 'set_my_promo_preferences', 'unregister_push_token',
   'update_my_profile',
-].concat(['best_offer', 'promo_dispatch', 'promo_dispatch_status', 'record_admin_password_change', 'clear_must_change_password', 'admin_import_products', 'delete_customer_account']).sort();
+].concat(['best_offer', 'promo_dispatch', 'promo_dispatch_status', 'record_admin_password_change', 'clear_must_change_password', 'admin_import_products', 'delete_customer_account',
+  'woo_apply_products', 'woo_hide_product', 'woo_record_sync', 'woo_full_sync_due', 'woo_claim_order_jobs', 'woo_finish_order_job',
+  'woo_dispatch', 'woo_order_status_trigger', 'admin_woo_status', 'admin_woo_set_orders', 'admin_woo_retry_orders', 'admin_woo_products']).sort();
 const AUTHENTICATED_EXEC = [
   'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
   'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
@@ -30,6 +32,7 @@ const AUTHENTICATED_EXEC = [
   'is_admin', 'list_products', 'mark_notifications_read', 'place_order', 'register_push_token',
   'request_wholesale', 'unregister_push_token', 'update_my_profile',
   'list_offers', 'set_my_promo_preferences', 'admin_import_products',
+  'admin_woo_status', 'admin_woo_set_orders', 'admin_woo_retry_orders', 'admin_woo_products',
 ].sort();
 
 describe('database catalog audit', () => {
@@ -94,7 +97,9 @@ describe('database catalog audit', () => {
   });
 
   test('notification delivery functions are service_role only', () => {
-    for (const f of ['claim_notifications(integer)', 'finish_notifications(uuid,uuid[],uuid[],text)', 'forget_push_tokens(text[])', 'delete_customer_account(uuid,uuid)']) {
+    for (const f of ['claim_notifications(integer)', 'finish_notifications(uuid,uuid[],uuid[],text)', 'forget_push_tokens(text[])', 'delete_customer_account(uuid,uuid)',
+      'woo_apply_products(jsonb,boolean,boolean)', 'woo_hide_product(bigint)', 'woo_record_sync(jsonb)', 'woo_full_sync_due()',
+      'woo_claim_order_jobs(integer)', 'woo_finish_order_job(bigint,bigint,text)']) {
       assert.equal(sql(`select has_function_privilege('service_role','public.${f}','execute')`), 't');
       assert.equal(sql(`select has_function_privilege('authenticated','public.${f}','execute')`), 'f');
       assert.equal(sql(`select has_function_privilege('anon','public.${f}','execute')`), 'f');
@@ -120,7 +125,8 @@ describe('database catalog audit', () => {
     for (const f of ['admin_archive_order', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
       'admin_restore_order', 'admin_review_wholesale', 'admin_save_category', 'admin_save_product', 'admin_set_order_status', 'admin_stats',
       'admin_cancel_offer', 'admin_get_promo_settings', 'admin_list_offers', 'admin_save_offer', 'admin_set_offer_active',
-      'admin_set_promo_settings', 'admin_set_promo_tester', 'admin_import_products']) {
+      'admin_set_promo_settings', 'admin_set_promo_tester', 'admin_import_products',
+      'admin_woo_status', 'admin_woo_set_orders', 'admin_woo_retry_orders', 'admin_woo_products']) {
       const src = sql(`select prosrc from pg_proc where proname='${f}'`);
       const first = src.split('\n').map((l) => l.trim()).find((l) => l && l !== 'begin' && !l.startsWith('declare'));
       assert.match(src, /perform public\.assert_admin\(\);/, f);

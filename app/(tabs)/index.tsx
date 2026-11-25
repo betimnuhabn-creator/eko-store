@@ -102,6 +102,7 @@ export default function CatalogScreen() {
         icon="cart-outline"
         title={quantities[p.id] ? `${t('add')} (${quantities[p.id]})` : t('addToCart')}
         onPress={() => add(p.id)}
+        disabled={!!session && p.price == null}
         testID={`add-${p.sku}`}
       />
     </Pressable>
