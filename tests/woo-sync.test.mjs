@@ -285,6 +285,12 @@ describe('orders: website → app', () => {
   test('guests, drafts and failed orders; app orders copied to the website are not imported twice', async () => {
     await webhook('order.created', siteOrder(9002, { email: 'nobody@test.local' }));
     assert.equal(appOrder(9002).customer_id, null, 'no app account → no customer link');
+    // cancelled on the website → the administrators are notified (even without an app customer)
+    const cancelledBefore = Number(sql(`select count(*) from public.notifications where recipient_id='${admin.id}' and type='order_cancelled'`));
+    const rc = await webhook('order.updated', siteOrder(9002, { status: 'cancelled', email: 'nobody@test.local' }));
+    assert.equal(rc.json.result.status, 'cancelled');
+    assert.equal(Number(sql(`select count(*) from public.notifications where recipient_id='${admin.id}' and type='order_cancelled' and data->>'order_number'='${appOrder(9002).order_number}'`)), 1);
+    assert.equal(Number(sql(`select count(*) from public.notifications where recipient_id='${admin.id}' and type='order_cancelled'`)), cancelledBefore + 1);
     assert.equal((await webhook('order.created', siteOrder(9003, { status: 'checkout-draft' }))).json.result.action, 'skipped');
     assert.equal((await webhook('order.created', siteOrder(9004, { status: 'failed' }))).json.result.action, 'skipped');
     // the copy of an app order (created by this function) comes back as a webhook

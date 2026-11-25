@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 export PGPASSWORD=postgres PGOPTIONS='-c client_min_messages=warning'
 PSQL=(psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -X -q -v ON_ERROR_STOP=1)
 MIG=supabase/migrations/20261220000000_woo_orders_in.sql
+MIG2=supabase/migrations/20261222000000_woo_order_cancel_notify.sql
 pass=0; fail=0
 q() { "${PSQL[@]}" -tA -c "$1"; }
 ok() { echo "  ✔ $1"; pass=$((pass+1)); }
@@ -40,6 +41,7 @@ before=$(snap)
 echo "C. Migration twice"
 run_editor "$MIG" && ok "run 1" || bad "run 1"
 run_editor "$MIG" && ok "run 2 (idempotent)" || bad "run 2"
+run_editor "$MIG2" && run_editor "$MIG2" && ok "cancel-notification update, twice" || bad "cancel-notification update"
 [[ "$(snap)" == "$before" ]] && ok "existing orders, jobs, products identical" || bad "existing data changed"
 expect "existing orders are app orders" "select string_agg(distinct source, ',') from public.orders" "app"
 expect "from now on (no old website orders imported)" "select (orders_polled_at > now() - interval '1 minute')::text from public.woo_settings" "true"
@@ -52,7 +54,9 @@ expect "linked by e-mail, total incl. shipping line, bank transfer, source woo" 
 expect "admins notified" "select count(*) from public.notifications where type='new_order' and recipient_id='${U}1'" "1"
 q "select public.woo_import_order('{\"woo_order_id\":8001,\"status\":\"completed\"}')" >/dev/null
 expect "website completed → app delivered, customer notified, not sent back" "select o.status||'/'||(select count(*) from public.notifications n where n.recipient_id='${U}2' and n.type='order_status')||'/'||(select count(*) from public.woo_order_jobs j where j.order_id=o.id) from public.orders o where woo_order_id=8001" "delivered/1/0"
-q "update public.orders set status='cancelled' where woo_order_id=8001" >/dev/null
+q "select public.woo_import_order('{\"woo_order_id\":8001,\"status\":\"cancelled\"}')" >/dev/null
+expect "cancelled on the website → administrators notified" "select count(*) from public.notifications where type='order_cancelled' and recipient_id='${U}1'" "1"
+q "update public.orders set status='delivered' where woo_order_id=8001" >/dev/null
 expect "app change on a website order → status job" "select count(*) from public.woo_order_jobs j join public.orders o on o.id=j.order_id where o.woo_order_id=8001 and j.kind='status'" "1"
 expect "app order copy: status from the website (processing keeps the app's detailed status)" "select public.woo_import_order(jsonb_build_object('woo_order_id',7000,'app_order_number',(select order_number from public.orders where woo_order_id=7000)::text,'status','processing'))->>'action'" "unchanged"
 
