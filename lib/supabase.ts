@@ -64,3 +64,14 @@ export function dispatchNotifications() {
   if (!isConfigured) return;
   supabase.functions.invoke('dispatch-notifications', { body: {} }).catch(() => {});
 }
+
+/** Website (eko-store.com) account with this e-mail + password? Then the server
+ *  creates or updates the app account (Edge Function account-link). */
+export async function linkWebsiteAccount(email: string, password: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.functions.invoke('account-link', { body: { action: 'app_login', email, password } });
+    return !error && data?.ok === true;
+  } catch {
+    return false;
+  }
+}

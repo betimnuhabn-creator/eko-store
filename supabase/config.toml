@@ -437,3 +437,8 @@ verify_jwt = false
 # function checks the WooCommerce signature / admin session itself.
 [functions.woo-sync]
 verify_jwt = false
+
+# One account for the website and the app (login link). Called by the app
+# without a session and by the website with the link secret.
+[functions.account-link]
+verify_jwt = false

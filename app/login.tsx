@@ -4,7 +4,7 @@ import { Banner, Button, Card, Field, Screen } from '../components/ui';
 import { showMessage } from '../lib/dialog';
 import { goBack } from '../lib/nav';
 import { errorText, useI18n } from '../lib/i18n';
-import { supabase } from '../lib/supabase';
+import { linkWebsiteAccount, supabase } from '../lib/supabase';
 import { colors } from '../lib/theme';
 import { AuthHeader } from '../components/AuthHeader';
 
@@ -18,7 +18,12 @@ export default function LoginScreen() {
   async function login() {
     if (!email.trim() || !password) return showMessage(t('error'), t('required'));
     setBusy(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    let { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    // Not (yet) an app account / other password: maybe a website (eko-store.com) account.
+    // The server checks the password on the website and creates/updates the app account.
+    if (error && /Invalid login credentials/i.test(error.message) && (await linkWebsiteAccount(email.trim(), password))) {
+      ({ error } = await supabase.auth.signInWithPassword({ email: email.trim(), password }));
+    }
     setBusy(false);
     if (error) return showMessage(t('error'), errorText(t, error));
     goBack();

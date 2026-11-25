@@ -8,7 +8,8 @@ import {
 } from './helpers.mjs';
 
 const EKO_TABLES = ['profiles', 'categories', 'products', 'orders', 'order_items', 'notifications', 'push_tokens',
-  'offers', 'offer_items', 'promo_events', 'promo_settings', 'password_reset_audit', 'account_deletion_audit', 'woo_settings', 'woo_order_jobs'];
+  'offers', 'offer_items', 'promo_events', 'promo_settings', 'password_reset_audit', 'account_deletion_audit', 'woo_settings', 'woo_order_jobs',
+  'link_attempts', 'link_jobs'];
 const EKO_DEFINER_FUNCTIONS = [
   'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
   'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
@@ -23,7 +24,8 @@ const EKO_DEFINER_FUNCTIONS = [
 ].concat(['best_offer', 'promo_dispatch', 'promo_dispatch_status', 'record_admin_password_change', 'clear_must_change_password', 'admin_import_products', 'delete_customer_account',
   'woo_apply_products', 'woo_hide_product', 'woo_record_sync', 'woo_full_sync_due', 'woo_claim_order_jobs', 'woo_finish_order_job',
   'woo_dispatch', 'woo_order_status_trigger', 'admin_woo_status', 'admin_woo_set_orders', 'admin_woo_retry_orders', 'admin_woo_products',
-  'woo_import_order', 'woo_orders_polled']).sort();
+  'woo_import_order', 'woo_orders_polled',
+  'link_rate_ok', 'link_user_info', 'link_set_wholesale', 'link_wholesale_trigger', 'link_claim_jobs', 'link_finish_job']).sort();
 const AUTHENTICATED_EXEC = [
   'admin_archive_order', 'admin_cancel_offer', 'admin_cancel_order', 'admin_delete_category', 'admin_delete_product',
   'admin_get_promo_settings', 'admin_list_offers', 'admin_restore_order',
@@ -101,7 +103,8 @@ describe('database catalog audit', () => {
     for (const f of ['claim_notifications(integer)', 'finish_notifications(uuid,uuid[],uuid[],text)', 'forget_push_tokens(text[])', 'delete_customer_account(uuid,uuid)',
       'woo_apply_products(jsonb,boolean,boolean)', 'woo_hide_product(bigint)', 'woo_record_sync(jsonb)', 'woo_full_sync_due()',
       'woo_claim_order_jobs(integer)', 'woo_finish_order_job(bigint,bigint,text)',
-      'woo_import_order(jsonb)', 'woo_orders_polled(timestamp with time zone)']) {
+      'woo_import_order(jsonb)', 'woo_orders_polled(timestamp with time zone)',
+      'link_rate_ok(text)', 'link_user_info(text)', 'link_set_wholesale(uuid,boolean)', 'link_claim_jobs(integer)', 'link_finish_job(bigint,text)']) {
       assert.equal(sql(`select has_function_privilege('service_role','public.${f}','execute')`), 't');
       assert.equal(sql(`select has_function_privilege('authenticated','public.${f}','execute')`), 'f');
       assert.equal(sql(`select has_function_privilege('anon','public.${f}','execute')`), 'f');

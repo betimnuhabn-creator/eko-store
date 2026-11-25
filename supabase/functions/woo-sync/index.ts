@@ -372,6 +372,34 @@ async function pushOrders(): Promise<Json> {
 }
 
 // ---------------------------------------------------------------------------
+// Wholesale approved / revoked in the app → website role (WordPress snippet endpoint)
+// ---------------------------------------------------------------------------
+async function pushWholesale(): Promise<Json> {
+  const secret = Deno.env.get('EKO_LINK_SECRET') ?? '';
+  if (!secret) return { skipped: 'no_link_secret' };
+  const jobs: Json[] = await rpc('link_claim_jobs', { p_limit: 20 });
+  let sent = 0, failed = 0;
+  for (const j of jobs) {
+    let error: string | null = null;
+    try {
+      const site = (Deno.env.get('EKO_SITE_URL') || WOO).replace(/\/+$/, '');
+      const res = await fetch(`${site}/wp-json/eko/v1/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-EKO-Link': secret, 'User-Agent': 'EKO-Store-App-Link/1.0' },
+        body: JSON.stringify({ email: j.email, wholesale: j.wholesale }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      sent++;
+    } catch (e) {
+      error = String((e as Error)?.message ?? e).slice(0, 200);
+      failed++;
+    }
+    await rpc('link_finish_job', { p_job: j.job_id, p_error: error });
+  }
+  return { sent, failed };
+}
+
+// ---------------------------------------------------------------------------
 // Callers
 // ---------------------------------------------------------------------------
 async function isAdmin(req: Request): Promise<boolean> {
@@ -439,10 +467,11 @@ Deno.serve(async (req) => {
 
     // 3. Scheduler tick (no key): only what is due
     const orders = await pushOrders();
+    const wholesale = await pushWholesale().catch((e) => ({ error: String((e as Error)?.message ?? e).slice(0, 200) }));
     const due: string = await rpc('woo_full_sync_due', {});
     const sync = due === 'no' ? null : await fullSync(due === 'due');   // the first catalogue: no promo notifications
     if (sync) await pollOrders().catch((e) => console.error('woo-sync orders', String((e as Error)?.message ?? e).slice(0, 300)));
-    return reply(200, { ok: true, orders, synced: !!sync });
+    return reply(200, { ok: true, orders, wholesale, synced: !!sync });
   } catch (e) {
     console.error('woo-sync', String((e as Error)?.message ?? e).slice(0, 300));
     return reply(500, { error: 'sync_failed' });
