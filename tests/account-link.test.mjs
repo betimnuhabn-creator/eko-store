@@ -1,5 +1,5 @@
 // One account for the website and the app — against a REAL WordPress with the
-// snippet docs/wordpress/eko-account-link.php (tests/wp-site.sh, port 8098)
+// snippet docs/wordpress/eko-account-link.php (tests/wp-site.sh, port 8079)
 // and the Edge Functions account-link + woo-sync. LOCAL only, test accounts only.
 //   bash tests/wp-site.sh up
 //   npx supabase db reset && npx supabase functions serve --env-file tests/functions.test.env
@@ -11,7 +11,7 @@ import { KEY, URL, client, makeAdmin, ok, service, signUp, sql } from './helpers
 import { startWooMock } from './woo-mock.mjs';
 
 const FN = `${URL}/functions/v1/account-link`;
-const SITE = 'http://localhost:8098';
+const SITE = 'http://localhost:8079';
 const LINK = 'test_link_secret_0123456789';
 let woo, admin;
 
