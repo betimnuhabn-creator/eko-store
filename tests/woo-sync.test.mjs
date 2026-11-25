@@ -236,3 +236,81 @@ describe('orders: app → website', () => {
     assert.ok(st.last_sync_at);
   });
 });
+
+describe('orders: website → app', () => {
+  const tick = () => call({});
+  let siteOrder;
+  before(async () => ({ siteOrder } = await import('./woo-mock.mjs')));
+  const appOrder = (wooId) => JSON.parse(sql(`select row_to_json(o) from public.orders o where woo_order_id=${wooId}`) || 'null');
+  const items = (orderId) => JSON.parse(sql(`select coalesce(json_agg(row_to_json(i) order by i.product_name), '[]') from public.order_items i where order_id='${orderId}'`));
+
+  test('webhook "order created": the website order appears in the app, linked to the customer by e-mail; admins notified', async () => {
+    sql(`update public.profiles set email='retail.site@test.local' where id='${retail.id}'`);
+    const r = await webhook('order.created', siteOrder(9001, { email: 'RETAIL.SITE@test.local' }));
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.equal(r.json.result.action, 'created');
+    const o = appOrder(9001);
+    assert.deepEqual([o.source, o.status, o.customer_id, Number(o.total), o.item_count, o.payment_method, o.delivery_name, o.delivery_address],
+      ['woo', 'new', retail.id, 337, 3, 'cash_on_delivery', 'Arben Krasniqi', 'Rr. Dardania 5 Kati 2']);
+    assert.match(o.customer_note, /eko-store\.com #9001[\s\S]*Thirrni para/);
+    const it = items(o.id);
+    assert.equal(it.length, 3, 'two products + shipping line');
+    assert.equal(it.find((x) => x.sku === '936').product_id, P(2853).id, 'size linked to the app product');
+    assert.equal(Number(it.find((x) => x.sku === '936').unit_price), 117);
+    assert.equal(Number(it.find((x) => x.product_name.startsWith('Transport')).unit_price), 3);
+    assert.equal(sql(`select count(*) from public.notifications where type='new_order' and data->>'order_id'='${o.id}'`) >= '1', true, 'admins notified');
+    const mine = ok(await retail.c.from('orders').select('id').eq('id', o.id));
+    assert.equal(mine.length, 1, 'the customer sees it in "Porositë e mia"');
+    assert.equal((await webhook('order.created', siteOrder(9001))).json.result.action, 'unchanged', 'the same webhook again: no duplicate');
+    assert.equal(sql('select count(*) from public.orders where woo_order_id=9001'), '1');
+  });
+
+  test('status in WooCommerce → app (customer notified); in the app → WooCommerce; no loop', async () => {
+    const o = appOrder(9001);
+    let r = await webhook('order.updated', siteOrder(9001, { status: 'completed' }));
+    assert.deepEqual([r.json.result.action, appOrder(9001).status], ['status', 'delivered']);
+    assert.equal(sql(`select count(*) from public.notifications where recipient_id='${retail.id}' and type='order_status' and data->>'order_id'='${o.id}'`), '1');
+    assert.equal(sql(`select count(*) from public.woo_order_jobs where order_id='${o.id}'`), '0', 'a change from the website is not sent back');
+    // app panel → website
+    woo.state.siteOrders.push(siteOrder(9001, { status: 'completed' }));
+    ok(await admin.c.rpc('admin_set_order_status', { p_order: o.id, p_status: 'cancelled', p_note: null }));
+    await tick();
+    assert.equal(woo.state.siteOrders.find((x) => x.id === 9001).status, 'cancelled', 'status sent to WooCommerce');
+    // WooCommerce answers with its own "updated" webhook: nothing changes, nothing is sent again
+    r = await webhook('order.updated', siteOrder(9001, { status: 'cancelled' }));
+    assert.equal(r.json.result.action, 'unchanged');
+    assert.equal(sql(`select count(*) from public.woo_order_jobs where order_id='${o.id}' and status='pending'`), '0');
+  });
+
+  test('guests, drafts and failed orders; app orders copied to the website are not imported twice', async () => {
+    await webhook('order.created', siteOrder(9002, { email: 'nobody@test.local' }));
+    assert.equal(appOrder(9002).customer_id, null, 'no app account → no customer link');
+    assert.equal((await webhook('order.created', siteOrder(9003, { status: 'checkout-draft' }))).json.result.action, 'skipped');
+    assert.equal((await webhook('order.created', siteOrder(9004, { status: 'failed' }))).json.result.action, 'skipped');
+    // the copy of an app order (created by this function) comes back as a webhook
+    const copy = woo.state.orders.at(-1);
+    const before = Number(sql('select count(*) from public.orders'));
+    let r = await webhook('order.created', copy);
+    assert.equal(r.json.result.action, 'unchanged');
+    assert.equal(Number(sql('select count(*) from public.orders')), before, 'not imported again');
+    // completed on the website → delivered in the app
+    r = await webhook('order.updated', { ...copy, status: 'completed' });
+    assert.equal(r.json.result.action, 'status');
+    assert.equal(sql(`select status from public.orders where order_number=${copy.meta_data.find((m) => m.key === 'eko_app_order').value}`), 'delivered');
+  });
+
+  test('a webhook that did not arrive: the hourly check / panel button finds the order', async () => {
+    sql("update public.woo_settings set orders_polled_at = now() - interval '1 hour'");
+    woo.state.siteOrders.push(siteOrder(9010, { email: 'nobody@test.local' }));
+    const r = await call({ action: 'sync' }, { token: admin.token });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.ok(r.json.orders.created >= 1, JSON.stringify(r.json.orders));
+    assert.ok(appOrder(9010));
+    assert.equal(sql('select count(*) from public.orders where woo_order_id=9001'), '1', 'already imported orders are not duplicated');
+  });
+
+  test('order webhooks need the signature too', async () => {
+    assert.equal((await webhook('order.created', siteOrder(9020), 'wrong')).status, 401);
+    assert.equal(appOrder(9020), null);
+  });
+});

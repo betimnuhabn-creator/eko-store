@@ -226,6 +226,52 @@ async function rowsFor(p: any, cats: Map<number, Cat>): Promise<Json[]> {
   return mapProduct(p, variations, cats);
 }
 
+// ---------------------------------------------------------------------------
+// Website orders → app
+// ---------------------------------------------------------------------------
+/** The app's view of a WooCommerce order (app orders copied to the website: only their status). */
+export function mapWooOrder(o: any): Json {
+  const appNumber = meta(o, 'eko_app_order');
+  if (appNumber) return { woo_order_id: o.id, app_order_number: String(appNumber), status: o.status };
+  const b = o.billing ?? {}, sh = o.shipping ?? {};
+  const join = (...x: unknown[]) => x.map((v) => String(v ?? '').trim()).filter(Boolean).join(' ');
+  const qtyPrice = (l: any) => {
+    const q = Math.max(1, Number(l.quantity) || 1);
+    return { quantity: q, unit_price: Math.round(((Number(l.total) || 0) + (Number(l.total_tax) || 0)) / q * 100) / 100 };
+  };
+  return {
+    woo_order_id: o.id,
+    status: o.status,
+    created_at: o.date_created_gmt ? `${o.date_created_gmt}Z` : null,
+    email: b.email || '',
+    name: join(sh.first_name || b.first_name, sh.last_name || b.last_name) || join(b.company),
+    phone: b.phone || sh.phone || '',
+    address: join(sh.address_1 || b.address_1, sh.address_2 || b.address_2),
+    city: sh.city || b.city || '',
+    note: o.customer_note || '',
+    payment_method: o.payment_method || '',
+    total: Number(o.total) || 0,
+    lines: (o.line_items ?? []).map((l: any) => ({
+      woo_product_id: l.product_id, woo_variation_id: l.variation_id, name: htmlToText(l.name), sku: l.sku || '', ...qtyPrice(l),
+    })),
+  };
+}
+
+/** Website orders created/changed since the last check (catches webhooks that did not arrive). */
+async function pollOrders(): Promise<Json> {
+  const startedAt = new Date().toISOString();
+  const prev: string | null = await rpc('woo_orders_polled', { p_at: null });
+  const since = new Date(new Date(prev ?? startedAt).getTime() - 10 * 60 * 1000).toISOString().slice(0, 19);
+  const orders = await wooAll(`orders?modified_after=${encodeURIComponent(since)}&orderby=modified&order=asc`);
+  const counts: Record<string, number> = {};
+  for (const o of orders) {
+    const r = await rpc('woo_import_order', { p: mapWooOrder(o) });
+    counts[r?.action ?? 'unknown'] = (counts[r?.action ?? 'unknown'] ?? 0) + 1;
+  }
+  await rpc('woo_orders_polled', { p_at: startedAt });
+  return counts;
+}
+
 async function fullSync(notify: boolean): Promise<Json> {
   const cats = await categories();
   const products = await wooAll('products?status=any');
@@ -370,6 +416,10 @@ Deno.serve(async (req) => {
       let body: Json = {};
       try { body = JSON.parse(raw); } catch { return reply(200, { ok: true, ping: true }); }   // WooCommerce "ping" on save
       const id = Number(body?.id);
+      if (topic.startsWith('order.')) {
+        if (topic === 'order.deleted' || !Number.isInteger(id) || id <= 0) return reply(200, { ok: true, ignored: topic });
+        return reply(200, { ok: true, result: await rpc('woo_import_order', { p: mapWooOrder(body) }) });
+      }
       if (!topic.startsWith('product.') || !Number.isInteger(id) || id <= 0) return reply(200, { ok: true, ignored: topic });
       if (topic === 'product.deleted') return reply(200, { ok: true, hidden: await rpc('woo_hide_product', { p_woo_id: id }) });
       return reply(200, { ok: true, result: await syncOne(id) });
@@ -382,13 +432,16 @@ Deno.serve(async (req) => {
     // 2. Panel button (administrators only)
     if (body.action === 'sync') {
       if (!(await isAdmin(req))) return reply(403, { error: 'not_allowed' });
-      return reply(200, { ok: true, result: await fullSync(false) });
+      const result = await fullSync(false);
+      const orders = await pollOrders().catch((e) => ({ error: String((e as Error)?.message ?? e).slice(0, 200) }));
+      return reply(200, { ok: true, result, orders });
     }
 
     // 3. Scheduler tick (no key): only what is due
     const orders = await pushOrders();
     const due: string = await rpc('woo_full_sync_due', {});
     const sync = due === 'no' ? null : await fullSync(due === 'due');   // the first catalogue: no promo notifications
+    if (sync) await pollOrders().catch((e) => console.error('woo-sync orders', String((e as Error)?.message ?? e).slice(0, 300)));
     return reply(200, { ok: true, orders, synced: !!sync });
   } catch (e) {
     console.error('woo-sync', String((e as Error)?.message ?? e).slice(0, 300));

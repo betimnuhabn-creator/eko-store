@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Empty, Pager, Spinner, StatusBadge, useConfirm, usePaging, useToast } from '../components/ui';
+import { Badge, Empty, Pager, Spinner, StatusBadge, useConfirm, usePaging, useToast } from '../components/ui';
 import { useNotifications } from '../lib/data';
 import { dateTime, downloadCsv, money, normalize } from '../lib/format';
 import { errorText, useI18n, type TKey } from '../lib/i18n';
@@ -162,6 +162,11 @@ export function Orders() {
                   <tr key={o.id} data-testid={`order-${o.order_number}`}>
                     <td data-label={t('order')}>
                       <Link to={`/orders/${o.id}`}>#{o.order_number}</Link>
+                      {o.source === 'woo' && (
+                        <div className="small" data-testid={`order-site-${o.order_number}`}>
+                          <Badge>{t('woo_from_site')}</Badge> <span className="muted">#{o.woo_order_id}</span>
+                        </div>
+                      )}
                     </td>
                     <td data-label={t('date')}>{dateTime(o.created_at)}</td>
                     <td data-label={t('customer')}>{o.profiles?.business_name || o.delivery_name}</td>

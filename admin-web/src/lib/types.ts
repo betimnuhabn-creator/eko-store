@@ -63,6 +63,8 @@ export type Order = {
   id: string;
   order_number: number;
   customer_id: string | null;
+  source?: 'app' | 'woo';
+  woo_order_id?: number | null;
   status: OrderStatus;
   price_tier: 'retail' | 'wholesale';
   total: number;

@@ -5,6 +5,7 @@
 | Drejtimi | Çfarë | Kur |
 |---|---|---|
 | Faqja → aplikacioni | Produktet: emri, përshkrimi, fotot, kategoria (më e thella), **Regular price → çmimi i pakicës**, **Wholesale Customer → çmimi i shumicës**, stoku, publikuar/fshehur. Çdo madhësi (variacion) = një artikull "Emri – 80L". | Menjëherë (webhook) + çdo orë + butoni **Produktet → Sinkronizo me faqen** |
+| Faqja → aplikacioni | **Porositë e faqes**: shfaqen te Paneli → Porositë dhe Admin → Porositë ("Nga faqja #…"), me njoftim për administratorët; klienti me llogari në aplikacion (i njëjti email) i sheh te "Porositë e mia". Statusi i WooCommerce ndryshon edhe në aplikacion (completed → dorëzuar, cancelled/refunded/failed → anuluar). | Menjëherë (webhook "Order created/updated") + kontroll çdo orë |
 | Aplikacioni → faqja | Porositë e aplikacionit krijohen te **WooCommerce → Orders** me çmimet e aplikacionit (pakicë/shumicë), klientin (sipas emailit), adresën; ndryshimet e statusit në panel ndjekin porosinë. | Brenda ~1 minute — **vetëm kur e aktivizoni** te Produktet → "Dërgo porositë në WooCommerce" |
 
 * Produktet e faqes ndryshohen **vetëm në WordPress** (paneli i shënon "Nga faqja"; ndryshimet aty mbishkruhen).
@@ -27,6 +28,7 @@
 6. **WordPress → WooCommerce → Settings → Advanced → Webhooks → Add webhook** (4 herë: Topic **Product created**, **Product updated**, **Product deleted**, **Product restored**):
    * Status: Active · Delivery URL: `https://mfpmcriffqlhlgaptdzx.supabase.co/functions/v1/woo-sync`
    * Secret: i njëjti si `WOO_WEBHOOK_SECRET` · API Version: WP REST API Integration v3 → Save.
+6b. **Porositë e faqes**: shtoni edhe 2 webhook të tjerë me të njëjtat fusha: Topic **Order created** dhe **Order updated** (migrimi `20261220000000_woo_orders_in.sql` duhet të jetë ekzekutuar).
 7. Automatizimi çdo orë dhe dërgimi i porosive: Paneli → **Njoftimet promocionale → adresa e Edge Functions** = `https://mfpmcriffqlhlgaptdzx.supabase.co/functions/v1` (aktivizon edhe shpërndarjen automatike të njoftimeve; modaliteti test mbetet).
 8. **Porositë**: Produktet → "Dërgo porositë në WooCommerce" → bëni 1 porosi provë me një klient test → kontrolloni WooCommerce → Orders → anulojeni.
 9. Plotësoni **Regular price** (pakica) te produktet në faqe.

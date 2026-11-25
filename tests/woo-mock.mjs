@@ -51,7 +51,7 @@ export function catalogue() {
 /** Starts the fake API. `state.requests` records every call; options change its behaviour. */
 export function startWooMock(port = 8099) {
   const state = { ...catalogue(), requests: [], orders: [], nextOrder: 5001, rejectHeaderAuth: false, failOrders: 0, refuse403: 0,
-    customers: [{ id: 77, email: 'known@test.local' }] };
+    customers: [{ id: 77, email: 'known@test.local' }], siteOrders: [] };
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => (raw += c));
@@ -87,6 +87,7 @@ export function startWooMock(port = 8099) {
         }
         return send(404, { code: 'woocommerce_rest_product_invalid_id' });
       }
+      if (req.method === 'GET' && path === 'orders') return list([...state.siteOrders, ...state.orders]);
       if (req.method === 'GET' && path === 'customers') return list(state.customers.filter((c) => c.email === url.searchParams.get('email')));
       if (req.method === 'POST' && path === 'orders') {
         if (state.failOrders > 0) { state.failOrders--; return send(500, { code: 'internal_error', message: 'boom' }); }
@@ -95,7 +96,7 @@ export function startWooMock(port = 8099) {
         return send(201, o);
       }
       if (req.method === 'PUT' && (m = path.match(/^orders\/(\d+)$/))) {
-        const o = state.orders.find((x) => x.id === Number(m[1]));
+        const o = [...state.orders, ...state.siteOrders].find((x) => x.id === Number(m[1]));
         if (!o) return send(404, { code: 'woocommerce_rest_shop_order_invalid_id' });
         Object.assign(o, JSON.parse(raw));
         return send(200, o);
@@ -104,4 +105,20 @@ export function startWooMock(port = 8099) {
     });
   });
   return new Promise((resolve) => server.listen(port, '0.0.0.0', () => resolve({ state, close: () => server.close() })));
+}
+
+/** A website order as WooCommerce sends it in the "order.created / order.updated" webhooks. */
+export function siteOrder(id, { email = 'guest@test.local', status = 'processing', lines, shipping = 3, meta = [] } = {}) {
+  const items = lines ?? [
+    { product_id: 2738, variation_id: 2853, name: 'Akumulues (Buffer) – 50L', sku: '936', quantity: 2, total: '234.00', total_tax: '0.00' },
+    { product_id: 2795, variation_id: 0, name: 'Wc guacë me fontanë 21A', sku: '576', quantity: 1, total: '100.00', total_tax: '0.00' },
+  ];
+  const sum = items.reduce((a, l) => a + Number(l.total) + Number(l.total_tax), 0);
+  return {
+    id, status, date_created_gmt: '2026-11-25T10:00:00', total: (sum + shipping).toFixed(2), payment_method: 'cod',
+    customer_note: 'Thirrni para', meta_data: meta,
+    billing: { first_name: 'Arben', last_name: 'Krasniqi', email, phone: '+38344555666', address_1: 'Rr. Dardania 5', city: 'Prishtinë' },
+    shipping: { first_name: 'Arben', last_name: 'Krasniqi', address_1: 'Rr. Dardania 5', address_2: 'Kati 2', city: 'Prishtinë' },
+    line_items: items,
+  };
 }

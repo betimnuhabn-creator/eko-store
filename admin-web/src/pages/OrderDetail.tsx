@@ -81,6 +81,7 @@ export function OrderDetail() {
             {t(archived ? 'archivedOrders' : 'orders')}
           </Link>{' '}
           / #{order.order_number}
+          {order.source === 'woo' && <span className="muted small"> · {t('woo_from_site')} #{order.woo_order_id}</span>}
         </h1>
         <div className="row">
           {canCancel(order.status, order.archived_at) && (
