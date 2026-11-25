@@ -127,6 +127,8 @@ describe('products: website → app', () => {
 
   test('webhook ping, unknown topics and "deleted": safe', async () => {
     assert.equal((await webhook('', 'webhook_id=12')).status, 200, 'WooCommerce ping when the webhook is saved');
+    const ping = await call(null, { raw: 'webhook_id=12', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    assert.deepEqual(ping, { status: 200, json: { ok: true, ping: true } }, 'unsigned ping (what WooCommerce really sends) → 200, nothing done');
     assert.equal((await webhook('order.created', { id: 1 })).status, 200);
     const r = await webhook('product.deleted', { id: 2738 });
     assert.equal(r.status, 200);

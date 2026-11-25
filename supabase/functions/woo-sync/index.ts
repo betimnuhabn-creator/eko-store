@@ -359,6 +359,10 @@ Deno.serve(async (req) => {
     const signature = req.headers.get('x-wc-webhook-signature') ?? '';
     const topic = req.headers.get('x-wc-webhook-topic') ?? '';
 
+    // 0. WooCommerce "ping" when a webhook is saved: form body "webhook_id=<n>", no signature.
+    //    Answered with 200 so that WooCommerce activates the webhook; nothing is read or changed.
+    if (!signature && /^webhook_id=\d+$/.test(raw.trim())) return reply(200, { ok: true, ping: true });
+
     // 1. WooCommerce webhook
     if (signature || topic) {
       if (!(await validWebhook(raw, signature))) return reply(401, { error: 'bad_signature' });
