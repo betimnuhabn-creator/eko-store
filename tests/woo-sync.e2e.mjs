@@ -97,3 +97,15 @@ test('app: wholesale customer sees the wholesale price of the same product', asy
   assert.equal(await pg.getByText('Çmimi sipas kërkesës').count(), 0);
   await pg.context().close();
 });
+
+test('app: administrator sees both prices ("Pakicë: pa çmim" when the website has no retail price)', async () => {
+  const pg = await page(true);
+  await appLogin(pg, admin);
+  await pg.goto(`${APP}/product/${pid(2853)}`);
+  await pg.getByText('Pakicë: pa çmim').first().waitFor();
+  await pg.getByText('Shumicë: 117,00 €', { exact: false }).first().waitFor();
+  await pg.goto(`${APP}/product/${pid(2795)}`);
+  await pg.getByText('Pakicë: 130,00 €').first().waitFor();
+  await pg.getByText('Shumicë: 100,00 €', { exact: false }).first().waitFor();
+  await pg.context().close();
+});

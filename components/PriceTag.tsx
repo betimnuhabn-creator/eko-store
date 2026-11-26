@@ -16,6 +16,21 @@ export function discountPercent(regular?: number | null, offer?: number | null) 
 export function PriceTag({ product, size = 18 }: { product: Product; size?: number }) {
   const { t } = useI18n();
   const { profile, session } = useAuth();
+  if (profile?.role === 'admin' && product.retail_price !== undefined && product.wholesale_price !== undefined) {
+    // administrators see both prices; a missing retail price (website: Regular price 0) is shown as such
+    const r = Number(product.retail_price ?? 0), w = Number(product.wholesale_price ?? 0);
+    return (
+      <View style={{ gap: 2 }} testID="admin-prices">
+        <Text style={{ color: colors.text, fontWeight: '700', fontSize: Math.max(13, size - 3) }}>
+          {t('tier_retail')}: {r > 0 ? money(r) : <Text style={{ color: colors.warning }}>{t('noRetailPrice')}</Text>}
+        </Text>
+        <Text style={{ color: colors.brandDark, fontWeight: '800', fontSize: Math.max(13, size - 3) }}>
+          {t('tier_wholesale')}: {w > 0 ? money(w) : '—'}
+          <Text style={{ color: colors.muted, fontWeight: '500', fontSize: 12 }}> / {product.unit}</Text>
+        </Text>
+      </View>
+    );
+  }
   if (product.price == null && session) {
     // logged in but no price for this customer (e.g. no retail price on the website yet)
     return <Text style={{ color: colors.muted, fontWeight: '700', fontSize: 13 }}>{t('priceOnRequest')}</Text>;
