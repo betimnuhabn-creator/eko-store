@@ -50,7 +50,7 @@ export function catalogue() {
 
 /** Starts the fake API. `state.requests` records every call; options change its behaviour. */
 export function startWooMock(port = 8099) {
-  const state = { ...catalogue(), requests: [], orders: [], nextOrder: 5001, rejectHeaderAuth: false, failOrders: 0, refuse403: 0,
+  const state = { ...catalogue(), requests: [], orders: [], nextOrder: 5001, rejectHeaderAuth: false, failOrders: 0, failPut: 0, refuse403: 0,
     customers: [{ id: 77, email: 'known@test.local' }], siteOrders: [] };
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -94,6 +94,26 @@ export function startWooMock(port = 8099) {
         const o = { id: state.nextOrder++, ...JSON.parse(raw) };
         state.orders.push(o);
         return send(201, o);
+      }
+      // product / size update (prices from the app): regular_price and meta_data by key, like WooCommerce
+      const putProduct = (obj) => {
+        if (!obj) return send(404, { code: 'woocommerce_rest_product_invalid_id' });
+        if (state.failPut > 0) { state.failPut--; return send(500, { code: 'internal_error', message: 'boom' }); }
+        if (state.onPut) { const f = state.onPut; state.onPut = null; f(); }
+        const b = JSON.parse(raw);
+        if ('regular_price' in b) obj.regular_price = b.regular_price;
+        for (const md of b.meta_data ?? []) {
+          obj.meta_data = obj.meta_data ?? [];
+          const e = obj.meta_data.find((x) => x.key === md.key);
+          if (e) e.value = md.value; else obj.meta_data.push({ id: 900 + obj.meta_data.length, key: md.key, value: md.value });
+        }
+        return send(200, obj);
+      };
+      if (req.method === 'PUT' && (m = path.match(/^products\/(\d+)\/variations\/(\d+)$/))) {
+        return putProduct((state.variations[m[1]] ?? []).find((v) => v.id === Number(m[2])));
+      }
+      if (req.method === 'PUT' && (m = path.match(/^products\/(\d+)$/))) {
+        return putProduct(state.products.find((x) => x.id === Number(m[1])));
       }
       if (req.method === 'PUT' && (m = path.match(/^orders\/(\d+)$/))) {
         const o = [...state.orders, ...state.siteOrders].find((x) => x.id === Number(m[1]));

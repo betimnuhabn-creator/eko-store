@@ -78,6 +78,11 @@ export function WooSyncCard({ onSynced }: { onSynced: () => void }) {
           {!st.functions_url_set && ` ${t('woo_no_scheduler')}`}
         </p>
       )}
+      {(st.prices_failed ?? 0) > 0 && (
+        <div className="alert alert-warn" data-testid="woo-prices-failed">
+          {t('woo_prices_failed', { n: st.prices_failed })} {st.last_price_error ? `(${st.last_price_error})` : ''}
+        </div>
+      )}
       {st.orders_failed > 0 && (
         <div className="alert alert-warn" data-testid="woo-orders-failed">
           {t('woo_orders_failed', { n: st.orders_failed })} {st.last_order_error ? `(${st.last_order_error})` : ''}{' '}

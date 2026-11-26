@@ -320,3 +320,105 @@ describe('orders: website → app', () => {
     assert.equal(appOrder(9020), null);
   });
 });
+
+describe('prices: app → website', () => {
+  const saveAs = async (wooId, prices) => {
+    const p = P(wooId);
+    ok(await admin.c.rpc('admin_save_product', { p: { ...p, ...prices } }));
+  };
+  const job = (wooId) => JSON.parse(sql(`select row_to_json(j) from public.woo_price_jobs j join public.products p on p.id=j.product_id
+    where p.woo_id=${wooId} order by j.id desc limit 1`) || 'null');
+  const puts = () => woo.state.requests.filter((r) => r.method === 'PUT' && r.path.startsWith('products/'));
+  const metaOf = (o, k) => o.meta_data?.find((x) => x.key === k)?.value;
+
+  test('the job tables and functions are not reachable through the API', async () => {
+    for (const [fn, args] of [['woo_claim_price_jobs', { p_limit: 1 }], ['woo_finish_price_job', { p_job: 1, p_rev: 1, p_error: null }]]) {
+      await denied(admin.c.rpc(fn, args));
+      await denied(client().rpc(fn, args));
+    }
+    await denied(admin.c.from('woo_price_jobs').select('*'));
+  });
+
+  test('administrator changes the retail price of a website product → Regular price on the website; no loop', async () => {
+    woo.state.requests.length = 0;
+    await saveAs(2795, { retail_price: 135 });
+    assert.deepEqual([job(2795).status, job(2795).retail, job(2795).wholesale], ['pending', true, false]);
+    const r = await call({});
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.deepEqual(r.json.prices, { sent: 1, failed: 0 });
+    const put = puts();
+    assert.deepEqual(put.map((x) => [x.path, JSON.parse(x.body)]), [['products/2795', { regular_price: '135' }]], 'only the changed price');
+    assert.equal(woo.state.products.find((x) => x.id === 2795).regular_price, '135');
+    assert.equal(job(2795).status, 'sent');
+    // the website sends the change back (webhook): same price, no new job
+    const n = sql('select count(*) from public.woo_price_jobs');
+    assert.equal((await webhook('product.updated', { id: 2795 })).status, 200);
+    assert.equal(Number(P(2795).retail_price), 135);
+    assert.equal(sql('select count(*) from public.woo_price_jobs'), n, 'nothing sent back');
+  });
+
+  test('wholesale price of a size → the size\'s Wholesale Suite price (parent marked as having wholesale prices)', async () => {
+    woo.state.requests.length = 0;
+    await saveAs(2853, { wholesale_price: 121.5 });
+    const r = await call({});
+    assert.deepEqual(r.json.prices, { sent: 1, failed: 0 }, JSON.stringify(r.json));
+    assert.deepEqual(puts().map((x) => [x.path, JSON.parse(x.body)]), [
+      ['products/2738/variations/2853', { meta_data: [{ key: 'wholesale_customer_wholesale_price', value: '121.5' }] }],
+      ['products/2738', { meta_data: [{ key: 'wholesale_customer_have_wholesale_price', value: 'yes' }] }],
+    ]);
+    const v = woo.state.variations[2738].find((x) => x.id === 2853);
+    assert.equal(metaOf(v, 'wholesale_customer_wholesale_price'), '121.5');
+    assert.equal(v.regular_price, '0', 'retail untouched');
+    assert.equal((await webhook('product.updated', { id: 2738 })).status, 200);
+    assert.equal(Number(P(2853).wholesale_price), 121.5);
+  });
+
+  test('website unreachable: the website sync does not bring the old price back; sent when the website answers', async () => {
+    woo.state.requests.length = 0;
+    woo.state.failPut = 1;
+    await saveAs(2742, { retail_price: 70, wholesale_price: 60 });
+    let r = await call({});
+    assert.deepEqual(r.json.prices, { sent: 0, failed: 1 });
+    assert.equal(job(2742).status, 'pending');
+    // full sync and a webhook while waiting: the app keeps the new prices
+    assert.equal((await call({ action: 'sync' }, { token: admin.token })).status, 200);
+    assert.equal((await webhook('product.updated', { id: 2742 })).status, 200);
+    assert.deepEqual([Number(P(2742).retail_price), Number(P(2742).wholesale_price)], [70, 60]);
+    const st = ok(await admin.c.rpc('admin_woo_status'));
+    assert.equal(st.prices_pending, 1);
+    r = await call({});
+    assert.deepEqual(r.json.prices, { sent: 1, failed: 0 });
+    const p = woo.state.products.find((x) => x.id === 2742);
+    assert.deepEqual([p.regular_price, metaOf(p, 'wholesale_customer_wholesale_price'), metaOf(p, 'wholesale_customer_have_wholesale_price')], ['70', '60', 'yes']);
+    assert.equal(job(2742).status, 'sent');
+  });
+
+  test('changed again while being sent → sent once more; a price changed on the website is not sent back', async () => {
+    await saveAs(2795, { retail_price: 140 });
+    const j = job(2795);
+    // the admin saves again while the website is being updated
+    woo.state.onPut = () => sql(`update public.woo_price_jobs set rev = rev + 1 where id=${j.id}`);
+    let r = await call({});
+    assert.deepEqual(r.json.prices, { sent: 1, failed: 0 });
+    assert.equal(job(2795).status, 'pending', 'newer change still to send');
+    r = await call({});
+    assert.deepEqual(r.json.prices, { sent: 1, failed: 0 });
+    assert.equal(job(2795).status, 'sent');
+
+    const n = sql('select count(*) from public.woo_price_jobs');
+    woo.state.products.find((x) => x.id === 2795).regular_price = '150';
+    assert.equal((await webhook('product.updated', { id: 2795 })).status, 200);
+    assert.equal(Number(P(2795).retail_price), 150);
+    assert.equal(sql('select count(*) from public.woo_price_jobs'), n);
+  });
+
+  test('app-only products and other fields are never sent to the website', async () => {
+    woo.state.requests.length = 0;
+    const own = ok(await admin.c.rpc('admin_save_product', { p: { sku: 'APP-ONLY-1', name: 'Vetëm në app', retail_price: 5, wholesale_price: 4, stock: 1, active: true, images: [] } }));
+    void own;
+    await saveAs(2795, { name: 'Emër tjetër', stock: 3 });
+    const r = await call({});
+    assert.deepEqual(r.json.prices, { sent: 0, failed: 0 });
+    assert.equal(puts().length, 0);
+  });
+});

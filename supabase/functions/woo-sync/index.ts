@@ -8,7 +8,8 @@
 //   * PC panel "Sinkronizo me faqen" (Authorization: administrator's session):
 //       POST { action: "sync" } → full catalogue now.
 //   * Scheduler (pg_cron, every minute, empty POST, no key — like dispatch-notifications):
-//       copies pending app orders to WooCommerce; full catalogue at most once an hour.
+//       copies pending app orders, wholesale changes and app price changes to WooCommerce;
+//       full catalogue at most once an hour.
 //       It cannot force anything else.
 //
 // Secrets (Supabase → Edge Functions → Secrets):
@@ -21,6 +22,8 @@
 // product per size (variation) "Name – 80L". Regular price → retail price,
 // Wholesale Suite price (meta wholesale_customer_wholesale_price) → wholesale
 // price, deepest category, photos, stock, published → active.
+// Back to the website: only the prices an administrator changes in the app / panel
+// (woo_price_jobs; Regular price and the Wholesale Suite meta).
 
 type Json = Record<string, any>;
 
@@ -400,6 +403,52 @@ async function pushWholesale(): Promise<Json> {
 }
 
 // ---------------------------------------------------------------------------
+// Price changed by an administrator in the app / panel → website
+// ---------------------------------------------------------------------------
+const WHOLESALE_META = 'wholesale_customer_wholesale_price';
+const priceText = (n: unknown) => {
+  const v = Number(n);
+  return Number.isFinite(v) && v > 0 ? String(Math.round(v * 100) / 100) : '';   // 0 → no price on the website
+};
+
+/** The WooCommerce update for one price job (only the prices that were changed in the app). */
+export function pricePayload(j: Json): Json {
+  const body: Json = {};
+  if (j.retail) body.regular_price = priceText(j.retail_price);
+  if (j.wholesale) {
+    const w = priceText(j.wholesale_price);
+    body.meta_data = [{ key: WHOLESALE_META, value: w }];
+    if (!j.woo_parent_id && w) body.meta_data.push({ key: 'wholesale_customer_have_wholesale_price', value: 'yes' });
+  }
+  return body;
+}
+
+async function pushPrices(): Promise<Json> {
+  const jobs: Json[] = await rpc('woo_claim_price_jobs', { p_limit: 20 });
+  let sent = 0, failed = 0;
+  for (const j of jobs) {
+    let error: string | null = null;
+    try {
+      const path = j.woo_parent_id ? `products/${j.woo_parent_id}/variations/${j.woo_id}` : `products/${j.woo_id}`;
+      const r = await woo(path, { method: 'PUT', body: JSON.stringify(pricePayload(j)) });
+      if (r.status !== 200) throw new Error(`HTTP ${r.status} ${r.reason}`.trim());
+      // a size got a wholesale price: the parent product is marked as having wholesale prices (Wholesale Suite)
+      if (j.woo_parent_id && j.wholesale && priceText(j.wholesale_price)) {
+        await woo(`products/${j.woo_parent_id}`, {
+          method: 'PUT', body: JSON.stringify({ meta_data: [{ key: 'wholesale_customer_have_wholesale_price', value: 'yes' }] }),
+        });
+      }
+      sent++;
+    } catch (e) {
+      error = String((e as Error)?.message ?? e).slice(0, 300);
+      failed++;
+    }
+    await rpc('woo_finish_price_job', { p_job: j.job_id, p_rev: j.rev, p_error: error });
+  }
+  return { sent, failed };
+}
+
+// ---------------------------------------------------------------------------
 // Callers
 // ---------------------------------------------------------------------------
 async function isAdmin(req: Request): Promise<boolean> {
@@ -468,10 +517,11 @@ Deno.serve(async (req) => {
     // 3. Scheduler tick (no key): only what is due
     const orders = await pushOrders();
     const wholesale = await pushWholesale().catch((e) => ({ error: String((e as Error)?.message ?? e).slice(0, 200) }));
+    const prices = await pushPrices().catch((e) => ({ error: String((e as Error)?.message ?? e).slice(0, 200) }));
     const due: string = await rpc('woo_full_sync_due', {});
     const sync = due === 'no' ? null : await fullSync(due === 'due');   // the first catalogue: no promo notifications
     if (sync) await pollOrders().catch((e) => console.error('woo-sync orders', String((e as Error)?.message ?? e).slice(0, 300)));
-    return reply(200, { ok: true, orders, wholesale, synced: !!sync });
+    return reply(200, { ok: true, orders, wholesale, prices, synced: !!sync });
   } catch (e) {
     console.error('woo-sync', String((e as Error)?.message ?? e).slice(0, 300));
     return reply(500, { error: 'sync_failed' });

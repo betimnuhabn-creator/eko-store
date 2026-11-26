@@ -6,9 +6,10 @@
 |---|---|---|
 | Faqja → aplikacioni | Produktet: emri, përshkrimi, fotot, kategoria (më e thella), **Regular price → çmimi i pakicës**, **Wholesale Customer → çmimi i shumicës**, stoku, publikuar/fshehur. Çdo madhësi (variacion) = një artikull "Emri – 80L". | Menjëherë (webhook) + çdo orë + butoni **Produktet → Sinkronizo me faqen** |
 | Faqja → aplikacioni | **Porositë e faqes**: shfaqen te Paneli → Porositë dhe Admin → Porositë ("Nga faqja #…"), me njoftim për administratorët; klienti me llogari në aplikacion (i njëjti email) i sheh te "Porositë e mia". Statusi i WooCommerce ndryshon edhe në aplikacion (completed → dorëzuar, cancelled/refunded/failed → anuluar). | Menjëherë (webhook "Order created/updated") + kontroll çdo orë |
+| Aplikacioni → faqja | **Çmimet**: kur administratori ndryshon çmimin e pakicës / shumicës të një produkti "Nga faqja" (Admin në telefon, paneli PC ose importi Excel), ai shkruhet te WordPress (**Regular price** / **Wholesale Customer price**). Dërgohet vetëm çmimi i ndryshuar; derisa faqja ta ketë, sinkronizimi nuk e kthen çmimin e vjetër. | Brenda ~1 minute (migrimi `20261230000000_woo_price_push.sql`) |
 | Aplikacioni → faqja | Porositë e aplikacionit krijohen te **WooCommerce → Orders** me çmimet e aplikacionit (pakicë/shumicë), klientin (sipas emailit), adresën; ndryshimet e statusit në panel ndjekin porosinë. | Brenda ~1 minute — **vetëm kur e aktivizoni** te Produktet → "Dërgo porositë në WooCommerce" |
 
-* Produktet e faqes ndryshohen **vetëm në WordPress** (paneli i shënon "Nga faqja"; ndryshimet aty mbishkruhen).
+* Te produktet e faqes (paneli i shënon "Nga faqja") **çmimet** mund të ndryshohen kudo; emri, fotot, përshkrimi dhe stoku ndryshohen **vetëm në WordPress** (ndryshimet e tyre në aplikacion mbishkruhen). Nëse çmimi ndryshohet njëkohësisht në të dy vendet, fiton ndryshimi i fundit. Dërgimet e dështuara (5 provë) shfaqen te Produktet → kartela e faqes.
 * Produkt i fshirë / Draft në faqe → i fshehur në aplikacion (nuk fshihet, porositë e vjetra e ruajnë).
 * **Regular price = 0** (pa çmim pakice): klientët e pakicës shohin "Çmimi sipas kërkesës" dhe nuk e porositin; shumica punon normalisht.
 * Sinkronizimi i parë nuk krijon njoftime promocionale; më pas ndryshimet e çmimeve/produktet e reja ndjekin rregullat e njoftimeve (aktualisht modaliteti test).
@@ -32,6 +33,7 @@
 7. Automatizimi çdo orë dhe dërgimi i porosive: Paneli → **Njoftimet promocionale → adresa e Edge Functions** = `https://mfpmcriffqlhlgaptdzx.supabase.co/functions/v1` (aktivizon edhe shpërndarjen automatike të njoftimeve; modaliteti test mbetet).
 8. **Porositë**: Produktet → "Dërgo porositë në WooCommerce" → bëni 1 porosi provë me një klient test → kontrolloni WooCommerce → Orders → anulojeni.
 9. Plotësoni **Regular price** (pakica) te produktet në faqe.
+9b. **Çmimet nga aplikacioni → faqja**: SQL Editor → `supabase/migrations/20261230000000_woo_price_push.sql`; pastaj ripubliko `woo-sync` (Code → ngjit `index.ts` → Deploy). Çelësi i WooCommerce duhet të jetë **Read/Write**.
 10. Aplikacioni Android: "Çmimi sipas kërkesës" hyn në build-in e ardhshëm (me konfirmim).
 
 ## Rikthim

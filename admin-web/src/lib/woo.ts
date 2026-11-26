@@ -16,6 +16,9 @@ export type WooStatus = {
   orders_sent: number;
   orders_failed: number;
   last_order_error: string | null;
+  prices_pending?: number;
+  prices_failed?: number;
+  last_price_error?: string | null;
 };
 
 /** null when the website sync is not installed in the database yet. */
