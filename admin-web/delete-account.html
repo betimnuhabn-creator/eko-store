@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="sq">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="%CSP%" />
+    <meta name="referrer" content="no-referrer" />
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="stylesheet" href="./legal/legal.css" />
+    <style>
+      form { display: grid; gap: 12px; margin-top: 10px; }
+      label { font-weight: 600; font-size: 14px; display: grid; gap: 6px; }
+      label.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+      input[type=email], input[type=password] { font-size: 16px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 10px; width: 100%; }
+      button { font-size: 16px; font-weight: 700; padding: 13px; border-radius: 10px; border: 0; background: #c53030; color: #fff; cursor: pointer; }
+      button[disabled] { opacity: .6; cursor: default; }
+      .msg { padding: 12px; border-radius: 10px; font-size: 14px; }
+      .msg.error { background: #fde8e8; color: #c53030; }
+      .msg.ok { background: #e6f6ec; color: #2f855a; }
+      .hidden { display: none !important; }
+    </style>
+    <title>EKO Store – Fshirja e llogarisë</title>
+  </head>
+  <body>
+    <header>EKO Store</header>
+    <main>
+      <article>
+        <h1>Fshirja e llogarisë EKO Store</h1>
+        <p class="muted">EKO SHPK · Përditësuar më: %LEGAL_DATE%</p>
+
+        <h2>Në aplikacion (menjëherë)</h2>
+        <ol>
+          <li>Hapni aplikacionin EKO Store dhe hyni në llogari.</li>
+          <li>Shtypni <strong>Llogaria</strong>.</li>
+          <li>Shtypni <strong>Fshi llogarinë time</strong>, shkruani fjalëkalimin dhe konfirmoni.</li>
+        </ol>
+
+        <h2>Këtu, pa aplikacion</h2>
+        <p>Hyni me emailin dhe fjalëkalimin e llogarisë suaj EKO Store. Llogaria fshihet menjëherë, në server.</p>
+        <form id="delete-form" novalidate>
+          <label>Email
+            <input id="email" type="email" autocomplete="email" required />
+          </label>
+          <label>Fjalëkalimi / Password
+            <input id="password" type="password" autocomplete="current-password" required />
+          </label>
+          <label class="check"><input id="agree" type="checkbox" />
+            <span>E kuptoj që llogaria ime fshihet përgjithmonë dhe ky veprim nuk kthehet mbrapsht. /
+              I understand my account is deleted permanently.</span></label>
+          <div class="msg error hidden" id="error" role="alert"></div>
+          <button id="submit" type="submit">Fshi llogarinë time / Delete my account</button>
+        </form>
+        <div class="msg ok hidden" id="done" role="status">
+          Llogaria juaj u fshi. Nuk mund të hyni më me të. / Your account was deleted and can no longer be used.
+        </div>
+        <p class="muted">Keni harruar fjalëkalimin? Në aplikacion shtypni <strong>Hyr → Keni harruar fjalëkalimin?</strong>, vendosni një fjalëkalim të ri
+          dhe pastaj fshijeni llogarinë këtu ose në aplikacion.</p>
+
+        <h2>Me email</h2>
+        <p>Nëse nuk mund të hyni, dërgoni një email nga adresa e llogarisë suaj te <a href="mailto:%CONTACT_EMAIL%?subject=Fshirja%20e%20llogaris%C3%AB%20EKO%20Store">%CONTACT_EMAIL%</a>
+          me temën "Fshirja e llogarisë EKO Store". E përpunojmë kërkesën brenda 30 ditëve.</p>
+
+        <h2>Çfarë fshihet</h2>
+        <ul>
+          <li>llogaria (emaili, fjalëkalimi), profili (emri, telefoni, adresa, të dhënat e biznesit);</li>
+          <li>njoftimet, tokenet e njoftimeve të pajisjeve dhe preferencat e njoftimeve;</li>
+          <li>qasja: pas fshirjes nuk mund të hyni më me këtë llogari.</li>
+        </ul>
+        <h2>Çfarë ruhet</h2>
+        <p>Porositë e kryera ruhen për aq kohë sa e kërkon ligji për dokumentet kontabël, pa lidhje me llogarinë tuaj.</p>
+
+        <div class="en">
+          <h2>Deleting your EKO Store account</h2>
+          <p><strong>In the app:</strong> log in → <em>Llogaria</em> (Account) → <em>Fshi llogarinë time</em> (Delete my account) → password → confirm.
+            <strong>On this page:</strong> log in with your e-mail and password in the form above; the account is deleted at once.
+            <strong>If you cannot log in:</strong> e-mail <a href="mailto:%CONTACT_EMAIL%">%CONTACT_EMAIL%</a> from your account's address
+            (subject "EKO Store account deletion"); handled within 30 days. Deleted: account, profile, notifications, device tokens and
+            notification preferences. Kept: completed orders, as required for accounting, unlinked from the account.</p>
+        </div>
+        <nav><a href="./privacy.html">Politika e privatësisë</a> · <a href="./terms.html">Kushtet e përdorimit</a></nav>
+      </article>
+    </main>
+    <script type="module" src="/src/delete/main.ts"></script>
+  </body>
+</html>
